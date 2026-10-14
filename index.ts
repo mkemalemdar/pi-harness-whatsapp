@@ -6,7 +6,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Controller, NEW_SESSION_COMMAND } from "./src/controller.ts";
+import { Controller, NEW_SESSION_ARG } from "./src/controller.ts";
 import { registerTools, setToolsActive, TOOL_NAMES } from "./src/tools.ts";
 
 export default function piHarnessWhatsApp(pi: ExtensionAPI) {
@@ -23,16 +23,14 @@ export default function piHarnessWhatsApp(pi: ExtensionAPI) {
 
 	pi.registerCommand("whatsapp", {
 		description: "WhatsApp settings: on/off, replies, voice, languages, contacts, connection",
-		handler: async (_args, ctx) => {
+		handler: async (args, ctx) => {
+			// Internal: "/new" from WhatsApp dispatches this so Pi gives us a real command context.
+			if (args.trim() === NEW_SESSION_ARG) {
+				await ctx.waitForIdle();
+				await ctx.newSession();
+				return;
+			}
 			await controller.openSettings(ctx);
-		},
-	});
-
-	pi.registerCommand(NEW_SESSION_COMMAND, {
-		description: "Start a new session (used by /new from WhatsApp)",
-		handler: async (_args, ctx) => {
-			await ctx.waitForIdle();
-			await ctx.newSession();
 		},
 	});
 

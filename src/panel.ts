@@ -21,13 +21,15 @@ import {
 } from "./panel-model.ts";
 import type { SettingsStore } from "./settings.ts";
 
-export type PanelAction = "contacts" | "connection" | "customSpeed" | "reopen";
+export type PanelAction = "contacts" | "connection" | "customSpeed" | "reopen" | "qr";
 
 export interface PanelHost {
 	settings: SettingsStore;
 	isEnabled(): boolean;
 	setEnabled(on: boolean): Promise<void>;
 	connectionLabel(): string;
+	/** A QR code is on screen waiting to be scanned. */
+	isShowingQr(): boolean;
 }
 
 /** Shows the panel once; resolves with the follow-up action, or undefined when closed. */
@@ -99,13 +101,18 @@ export function showPanel(ctx: ExtensionContext, host: PanelHost): Promise<Panel
 		// The connection state changes on its own (QR, connected…); keep that row current.
 		let shownConnection = host.connectionLabel();
 		refresh = setInterval(() => {
+			// Close as soon as a QR code shows, so the panel doesn't cover it.
+			if (host.isShowingQr()) {
+				finish("qr");
+				return;
+			}
 			const label = host.connectionLabel();
 			if (label === shownConnection) return;
 			shownConnection = label;
 			list.updateValue("connection", label);
 			list.updateValue("whatsapp", host.isEnabled() ? ON : OFF);
 			tui.requestRender();
-		}, 1000);
+		}, 250);
 		refresh.unref?.();
 
 		const container = new Container();

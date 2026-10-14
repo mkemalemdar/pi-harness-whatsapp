@@ -34,8 +34,8 @@ import type { ModelSpec } from "./voice/models.ts";
 import { VoiceService } from "./voice/service.ts";
 
 export const STATUS_KEY = "whatsapp";
-/** Registered by index.ts; dispatching it gives a real command context for ctx.newSession(). */
-export const NEW_SESSION_COMMAND = "whatsapp-new";
+/** Hidden argument of /whatsapp; dispatching it gives a real command context for ctx.newSession(). */
+export const NEW_SESSION_ARG = "__new-session";
 const QR_WIDGET_KEY = "whatsapp-qr";
 const log = createLogger("controller");
 
@@ -206,6 +206,10 @@ export class Controller implements PanelHost, CommandEnv {
 		}
 	}
 
+	isShowingQr(): boolean {
+		return this.session.enabled && this.connection.getState().kind === "qr";
+	}
+
 	recentChats(): RecentChat[] {
 		return this.recents.list();
 	}
@@ -219,6 +223,8 @@ export class Controller implements PanelHost, CommandEnv {
 		}
 		for (;;) {
 			const action = await showPanel(ctx, this);
+			// The QR code appeared: the panel closed so it's visible; don't cover it with dialogs.
+			if (action === "qr") return;
 			if (action === undefined) {
 				await this.offerModelCleanup(ctx);
 				return;
@@ -391,10 +397,10 @@ export class Controller implements PanelHost, CommandEnv {
 		this.leaveAnnouncement(chatJid, "✅ Pi is back.");
 	}
 
-	/** /new from WhatsApp: runs the whatsapp-new command, which may replace the session. */
+	/** /new from WhatsApp: runs "/whatsapp __new-session", which replaces the session. */
 	startNewSession(chatJid: string): void {
 		this.leaveAnnouncement(chatJid, "🆕 New session started.");
-		this.pi.sendUserMessage(`/${NEW_SESSION_COMMAND}`, { expandPromptTemplates: true });
+		this.pi.sendUserMessage(`/whatsapp ${NEW_SESSION_ARG}`, { expandPromptTemplates: true });
 	}
 
 	private announcePending(): void {

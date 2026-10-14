@@ -19,11 +19,11 @@ This file is for an AI agent (Pi, Claude Code, Codex, …) asked to install this
 Ask these together, in one message, and wait for the answers:
 
 1. **Which WhatsApp number will Pi use?** Recommend a **second number**. The extension uses an unofficial WhatsApp Web client (Baileys), and WhatsApp may restrict numbers that use one. Using their own number also works: they then talk to Pi in the "Message yourself" chat.
-2. **Command conflicts:** this extension registers the `/whatsapp` and `/whatsapp-new` commands. Before installing, list the commands that are already registered:
+2. **Command conflicts:** this extension registers the `/whatsapp` command. Before installing, list the commands that are already registered:
    ```bash
    echo '{"type":"get_commands"}' | pi --mode rpc | grep '"get_commands"'
    ```
-   If another package already registers `/whatsapp` or `/whatsapp-new` (each entry shows its `source`), ask the user to remove that package first. Other WhatsApp extensions that use different command names can stay.
+   If another package already registers `/whatsapp` (each entry shows its `source`), ask the user to remove that package first. Other WhatsApp extensions that use different command names can stay.
 3. **Languages:** which languages they will speak and want spoken replies in. The default is English only. Each spoken language downloads one voice (~67 MB); speech recognition covers all languages with one model.
 4. **Speech model:** this depends on free RAM (check with `free -m`):
    - **base** (default): ~1.0 GB, fastest (about 2.5–4.5× faster than the others in our tests)

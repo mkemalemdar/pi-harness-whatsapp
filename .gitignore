@@ -1,0 +1,8 @@
+node_modules/
+coverage/
+*.log
+.DS_Store
+# runtime data never belongs in the repo
+auth/
+models/
+tmp/

@@ -1,0 +1,71 @@
+{
+  "name": "pi-harness-whatsapp",
+  "version": "0.1.0",
+  "description": "Talk to the Pi coding agent from WhatsApp: QR pairing, automatic replies, voice notes in and out (local Whisper + Piper), poll menus to control Pi.",
+  "type": "module",
+  "license": "MIT",
+  "author": "mkemalemdar",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mkemalemdar/pi-harness-whatsapp.git"
+  },
+  "homepage": "https://github.com/mkemalemdar/pi-harness-whatsapp#readme",
+  "bugs": {
+    "url": "https://github.com/mkemalemdar/pi-harness-whatsapp/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "whatsapp",
+    "baileys",
+    "voice",
+    "whisper",
+    "piper"
+  ],
+  "files": [
+    "index.ts",
+    "src",
+    "README.md",
+    "AGENT_INSTALL.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "image": "https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "dependencies": {
+    "baileys": "7.0.0-rc14",
+    "franc-min": "^6.2.0",
+    "qrcode-terminal": "^0.12.0",
+    "sherpa-onnx-node": "^1.13.8"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "^1.2.0",
+    "@earendil-works/pi-coding-agent": "^1.2.0",
+    "@earendil-works/pi-tui": "^1.2.0",
+    "@types/node": "^24.19.2",
+    "@types/qrcode-terminal": "^0.12.2",
+    "typebox": "^1.3.27",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.4"
+  }
+}

@@ -94,15 +94,41 @@ Voice notes are transcribed on your machine and given to Pi tagged with their la
 
 Models download automatically the first time they're needed, or right away when you change languages or the speech model. One multilingual Whisper model covers every language. Each spoken language needs one Piper voice (~67 MB download).
 
-Measured on an Intel i5-13500 (CPU only, 8 threads). Each model ran 5 times on a 22-second Turkish voice note and a 22-second English one. Times are medians. Word errors are measured against the script. The notes were spoken by Piper voices, so expect somewhat more errors with real voices and background noise.
+Measured on an Intel i5-13500 (CPU only, 8 threads). For each language, a ~20-second voice note with the same short developer update was spoken by that language's Piper voice. Each model transcribed every note 5 times; the five runs always gave the same transcript. Times are medians. Wrong words are counted against the script, ignoring punctuation and capitals. Real voices and background noise will cause more errors.
 
-| Speech model | Download | RAM (peak) | Turkish 22 s | English 22 s | Word errors TR / EN |
-|---|---|---|---|---|---|
-| **Fast (base)**, default | 208 MB (~160 MB on disk) | ~1.3 GB | 2.5 s | 2.1 s | 6.8 % / 0 % |
-| Balanced (small) | 639 MB (~360 MB on disk) | ~1.6 GB | 7.3 s | 5.4 s | 4.5 % / 0 % |
-| Accurate (turbo) | 564 MB | ~2.6 GB | 7.8 s | 6.7 s | 4.5 % / 0 % |
+| Speech model | Download | RAM (peak) |
+|---|---|---|
+| **Fast (base)**, default | 208 MB | ~1.0 GB |
+| Balanced (small) | 639 MB | ~1.6 GB |
+| Accurate (turbo) | 564 MB | ~2.9 GB |
 
-All five runs of each model gave the same transcript, and every run detected the right language. Base was about three times faster; small and turbo made fewer mistakes on the Turkish test. Piper makes a ~7-second reply in under a second. Models are unloaded after 10 minutes without voice work, so idle RAM use is zero.
+How long each model took, and the share of words it got wrong:
+
+| Language | Note length | Base: time · wrong words | Small: time · wrong words | Turbo: time · wrong words |
+|---|---|---|---|---|
+| Turkish | 21 s | 2.9 s · 16 % | 8.7 s · 14 % | 7.7 s · 7 % |
+| English | 22 s | 2.0 s · 0 % | 5.2 s · 0 % | 5.3 s · 0 % |
+| Spanish | 19 s | 2.3 s · 3 % | 10.2 s · 0 % | 6.7 s · 0 % |
+| Polish | 22 s | 3.0 s · 4 % | 10.1 s · 0 % | 8.4 s · 0 % |
+| Portuguese | 18 s | 2.2 s · 7 % | 6.2 s · 9 % | 7.6 s · 2 % |
+| German | 20 s | 3.0 s · 16 % | 9.7 s · 6 % | 7.6 s · 3 % |
+| French | 21 s | 3.0 s · 10 % | 9.0 s · 10 % | 7.9 s · 3 % |
+| Dutch | 25 s | 3.0 s · 10 % | 8.6 s · 3 % | 7.6 s · 3 % |
+| Russian | 21 s | 2.5 s · 6 % | 7.7 s · 4 % | 7.8 s · 4 % |
+| Swedish | 23 s | 2.6 s · 11 % | 7.8 s · 14 % | 7.1 s · 5 % |
+| Italian | 17 s | 2.2 s · 22 % | 7.6 s · 16 % | 7.2 s · 7 % |
+| Finnish | 22 s | 3.2 s · 32 % | 11.5 s · 22 % | 8.4 s · 8 % |
+| Ukrainian¹ | 19 s | 2.7 s · 40 % | 12.2 s · 26 % | 7.7 s · 13 % |
+| Arabic² | 28 s | 3.4 s · 64 % | 12.3 s · 51 % | 9.3 s · 47 % |
+| Persian³ | 19 s | 3.1 s · 92 % | 8.5 s · 78 % | 8.7 s · 66 % |
+| Hindi⁴ | 20 s | 2.9 s · 100 % | 13.0 s · 94 % | 7.9 s · 94 % |
+
+1. Tested with the only Ukrainian Piper voice that works, which is the lowest quality grade; part of the errors come from the voice.
+2. The note was longer than 28 s, so it was transcribed in two parts.
+3. Much of this is spelling: turbo wrote what was said in everyday spoken Persian (e.g. میتونن for می‌توانند), so the meaning was mostly right.
+4. Not usable yet: base writes Hindi in Urdu script, and small and turbo drop letters from Devanagari words.
+
+Base was about 2.5–4.5× faster than the others. Small and turbo made fewer mistakes in most languages, and turbo had the fewest errors (or tied for fewest) in every language. Piper makes a ~7-second reply in under a second. Models are unloaded after 10 minutes without voice work, so idle RAM use is zero.
 
 Received files are saved in `~/.pi/agent/pi-harness-whatsapp/inbox/` (kept for 7 days), and Pi is told where they are.
 

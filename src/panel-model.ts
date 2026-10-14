@@ -143,7 +143,7 @@ export function buildRows(state: PanelState): PanelRow[] {
 		{
 			id: "speechModel",
 			label: "Speech model",
-			description: "How voice notes are understood. Base: fastest (~1.3 GB RAM). Small: more accurate in our tests (~1.6 GB). Turbo: the largest model (~2.6 GB).",
+			description: "How voice notes are understood. Base: fastest (~1.0 GB RAM). Small: more accurate (~1.6 GB). Turbo: most accurate (~2.9 GB).",
 			currentValue: SPEECH_MODEL_LABELS[settings.speechModel],
 			values: SPEECH_MODELS.map((model) => SPEECH_MODEL_LABELS[model]),
 			kind: "cycle",

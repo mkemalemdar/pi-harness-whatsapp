@@ -132,7 +132,8 @@ export const LANGUAGES: readonly LanguageInfo[] = [
 		iso3: "ukr",
 		name: "Ukrainian",
 		nativeName: "Українська",
-		voices: [{ id: "uk_UA-ukrainian_tts-medium", label: "Ukrainian TTS" }],
+		// "ukrainian_tts" is character-based and sherpa-onnx feeds it phonemes, so it stays almost silent.
+		voices: [{ id: "uk_UA-lada-x_low", label: "Lada (female)" }],
 	},
 	{
 		code: "ar",
@@ -161,6 +162,13 @@ export const LANGUAGES: readonly LanguageInfo[] = [
 		name: "Swedish",
 		nativeName: "Svenska",
 		voices: [{ id: "sv_SE-nst-medium", label: "NST" }],
+	},
+	{
+		code: "fi",
+		iso3: "fin",
+		name: "Finnish",
+		nativeName: "Suomi",
+		voices: [{ id: "fi_FI-harri-medium", label: "Harri (male)" }],
 	},
 	{
 		code: "zh",

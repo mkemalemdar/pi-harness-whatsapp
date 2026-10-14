@@ -26,9 +26,10 @@ Ask these together, in one message, and wait for the answers:
    If another package already registers `/whatsapp` or `/whatsapp-new` (each entry shows its `source`), ask the user to remove that package first. Other WhatsApp extensions that use different command names can stay.
 3. **Languages:** which languages they will speak and want spoken replies in. The default is English only. Each spoken language downloads one voice (~67 MB); speech recognition covers all languages with one model.
 4. **Speech model:** this depends on free RAM (check with `free -m`):
-   - **base** (default): ~1.3 GB, fastest (about 3× faster than the others in our tests)
-   - **small**: ~1.6 GB, made fewer mistakes than base on the Turkish test
-   - **turbo**: ~2.6 GB, the largest model
+   - **base** (default): ~1.0 GB, fastest (about 2.5–4.5× faster than the others in our tests)
+   - **small**: ~1.6 GB, fewer mistakes than base in most tested languages
+   - **turbo**: ~2.9 GB, the fewest mistakes in our tests
+   - The README has a per-language table. Hindi voice notes are not reliable yet with any model.
 5. **ffmpeg:** if `ffmpeg -version` fails, ask before installing it (it usually needs sudo: `sudo apt install ffmpeg`, `brew install ffmpeg`, …). Without it, text still works, but voice notes don't.
 6. **Owner:** who may change Pi's settings from WhatsApp (their own phone number, with country code). If they don't know yet, skip it: the first person who messages the bot is offered as owner in the terminal.
 7. **Background service:** whether Pi should keep running without a terminal (see "Run in the background" in the README). Don't set it up unless they say yes. If they do, ask which project folder Pi should work in.
@@ -57,7 +58,7 @@ Settings live in `~/.pi/agent/pi-harness-whatsapp/config.json`. Unknown or inval
 
 | Field | Values |
 |---|---|
-| `languages` | Language codes; the first one is the default: `en tr de fr es it pt nl pl ru uk ar fa hi sv zh` |
+| `languages` | Language codes; the first one is the default: `en tr de fr es it pt nl pl ru uk ar fa hi sv fi zh` |
 | `speechModel` | `base` (default) · `small` · `turbo` |
 | `voiceMode` | `off` · `voice` · `voice+text` · `mirror` (default: voice note in → voice reply) |
 | `replyLanguage` | `mirror` (default) or one of `languages` |

@@ -22,6 +22,8 @@ export interface MenuItem {
 	button?: boolean;
 	/** Can't be selected (section labels, info lines). */
 	disabled?: boolean;
+	/** A section title: shown bold in the accent colour. */
+	heading?: boolean;
 }
 
 export interface ListMenuOptions {
@@ -103,7 +105,13 @@ export class ListMenu implements Component {
 			const pointer = selected ? t.fg("accent", "→ ") : "  ";
 			const indent = "  ".repeat(item.indent ?? 0);
 			const text = `${indent}${item.marker ? `${item.marker} ` : ""}${item.label}`;
-			const label = item.disabled ? t.fg("dim", text) : selected ? t.fg("accent", text) : text;
+			const label = item.heading
+				? t.fg("accent", t.bold(text))
+				: item.disabled
+					? t.fg("dim", text)
+					: selected
+						? t.fg("accent", text)
+						: text;
 			const padded = label + " ".repeat(Math.max(1, labelWidth - text.length));
 			const detail = item.detail ? t.fg("dim", item.detail) : "";
 			lines.push(truncateToWidth(`${pointer}${padded}${detail}`, width));
@@ -182,7 +190,11 @@ export class InputStep implements Component {
 export class MenuStack implements Component {
 	private readonly stack: Component[] = [];
 
-	constructor(private readonly onEmpty: () => void) {}
+	constructor(
+		private readonly onEmpty: () => void,
+		/** Called whenever a menu closes and an earlier one is shown again. */
+		private readonly onReturn: () => void = () => {},
+	) {}
 
 	push(component: Component): void {
 		this.stack.push(component);
@@ -192,12 +204,14 @@ export class MenuStack implements Component {
 	pop(): void {
 		this.stack.pop();
 		if (this.stack.length === 0) this.onEmpty();
+		else this.onReturn();
 	}
 
-	/** Closes everything. */
-	close(): void {
-		this.stack.length = 0;
-		this.onEmpty();
+	/** Goes back to the first menu. */
+	home(): void {
+		if (this.stack.length <= 1) return;
+		this.stack.length = 1;
+		this.onReturn();
 	}
 
 	top(): Component | undefined {

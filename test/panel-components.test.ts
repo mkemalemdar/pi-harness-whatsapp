@@ -55,9 +55,13 @@ describe("ListMenu", () => {
 });
 
 describe("MenuStack", () => {
-	it("opens deeper menus and closes when the first one is left", () => {
+	it("opens deeper menus, returns home, and closes when the first one is left", () => {
 		let closed = 0;
-		const stack = new MenuStack(() => closed++);
+		let returned = 0;
+		const stack = new MenuStack(
+			() => closed++,
+			() => returned++,
+		);
 		const events: string[] = [];
 		stack.push(menu([{ id: "x", label: "X" }], events));
 		stack.push(menu([{ id: "y", label: "Y" }], events));
@@ -65,6 +69,11 @@ describe("MenuStack", () => {
 		expect(events).toEqual(["select:y"]);
 		stack.pop();
 		expect(closed).toBe(0);
+		expect(returned).toBe(1);
+		stack.push(menu([{ id: "z", label: "Z" }], events));
+		stack.push(menu([{ id: "w", label: "W" }], events));
+		stack.home();
+		expect(returned).toBe(2);
 		stack.pop();
 		expect(closed).toBe(1);
 	});

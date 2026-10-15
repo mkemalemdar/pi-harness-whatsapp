@@ -4,8 +4,8 @@
  * dialogs to type numbers and names) and the panel reopens afterwards.
  */
 
-import { type ExtensionContext, getSettingsListTheme, type Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, type SettingItem, SettingsList, Text } from "@earendil-works/pi-tui";
+import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { Component } from "@earendil-works/pi-tui";
 import { getLanguage, languageLabel } from "./languages.ts";
 import {
 	applyChoice,
@@ -56,6 +56,20 @@ export interface PanelHost {
 	sendVoiceSample(language: string, voiceId: string, onStatus: (text: string) => void): Promise<void>;
 }
 
+/** Main-panel lines: "[SECTION]" headers the cursor skips, indented rows, a blank line between sections. */
+export function mainItems(rows: readonly PanelRow[]): MenuItem[] {
+	const items: MenuItem[] = [];
+	for (const row of rows) {
+		if (row.kind === "header") {
+			if (items.length > 0) items.push({ id: `space:${row.id}`, label: "", disabled: true });
+			items.push({ id: row.id, label: `[${row.label}]`, disabled: true, heading: true });
+		} else {
+			items.push({ id: row.id, label: row.label, indent: 1, detail: row.currentValue, description: row.description });
+		}
+	}
+	return items;
+}
+
 /** Shows the panel; resolves with a follow-up action, or undefined when closed. */
 export function showPanel(ctx: ExtensionContext, host: PanelHost, focus?: string): Promise<PanelAction | undefined> {
 	return ctx.ui.custom<PanelAction | undefined>((tui, theme, _keybindings, done) => {
@@ -74,36 +88,32 @@ export function showPanel(ctx: ExtensionContext, host: PanelHost, focus?: string
 			done(action);
 		};
 		const render = () => tui.requestRender();
-		let list: SettingsList | undefined;
 		const refreshValues = () => {
-			for (const row of buildRows(state())) list?.updateValue(row.id, row.currentValue);
+			main.setItems(mainItems(buildRows(state())));
 			render();
 		};
+		const stack = new MenuStack(() => finish(undefined), refreshValues);
+		const context: SubmenuContext = { host, theme, stack, render, refreshValues: () => refreshValues() };
 
-		const items: SettingItem[] = buildRows(state()).map((row) => {
-			const item: SettingItem = { id: row.id, label: row.label, description: row.description, currentValue: row.currentValue };
-			if (row.kind === "header") return item;
-			if (row.kind === "contacts") {
-				item.submenu = () => {
+		const main: ListMenu = new ListMenu(theme, {
+			title: "WhatsApp settings",
+			items: mainItems(buildRows(state())),
+			...(focus ? { initialId: focus } : {}),
+			maxVisible: 40,
+			hint: "↑↓ move · Enter open · Esc close",
+			onCancel: () => stack.pop(),
+			onSelect: (item) => {
+				const row = buildRows(state()).find((candidate) => candidate.id === item.id);
+				if (!row) return;
+				if (row.kind === "contacts") {
 					finish("contacts");
-					return { render: () => [], invalidate() {} };
-				};
-				return item;
-			}
-			item.submenu = (_value, close) => {
-				const stack = new MenuStack(() => {
-					close(undefined);
-					refreshValues();
-				});
-				stack.push(openSubmenu(row, { host, theme, stack, render, refreshValues }));
-				return stack;
-			};
-			return item;
+					return;
+				}
+				stack.push(openSubmenu(row, context));
+				render();
+			},
 		});
-
-		const settingsList = new SettingsList(items, Math.min(items.length, 26), getSettingsListTheme(), () => {}, () => finish(undefined));
-		list = settingsList;
-		if (focus) settingsList.selectItem(focus);
+		stack.push(main);
 
 		// The connection changes on its own (QR, connected…). Keep it current, and
 		// close as soon as a QR code shows so the panel doesn't cover it.
@@ -120,14 +130,11 @@ export function showPanel(ctx: ExtensionContext, host: PanelHost, focus?: string
 		}, 250);
 		refresh.unref?.();
 
-		const container = new Container();
-		container.addChild(new Text(theme.fg("accent", theme.bold("WhatsApp settings")), 0, 0));
-		container.addChild(settingsList);
 		return {
-			render: (width: number) => container.render(width),
-			invalidate: () => container.invalidate(),
+			render: (width: number) => stack.render(width),
+			invalidate: () => stack.invalidate(),
 			handleInput: (data: string) => {
-				settingsList.handleInput(data);
+				stack.handleInput(data);
 				render();
 			},
 		};
@@ -363,7 +370,7 @@ function speedMenu(row: PanelRow, { host, theme, stack }: SubmenuContext): Compo
 						host.settings.update((draft) => {
 							draft.voiceSpeed = clampSpeed(speed);
 						});
-						stack.close();
+						stack.home();
 						return undefined;
 					},
 					() => stack.pop(),
@@ -526,7 +533,7 @@ function connectionMenu(row: PanelRow, context: SubmenuContext): Component {
 					return;
 				}
 				void host.connectionCommand(command).finally(render);
-				stack.close();
+				stack.home();
 			},
 		});
 	const connected = host.connectionLabel().startsWith("connected");
@@ -556,7 +563,7 @@ function connectionMenu(row: PanelRow, context: SubmenuContext): Component {
 		onSelect: (item) => {
 			if (item.id === "connect") {
 				void host.connectionCommand("connect").finally(render);
-				stack.close();
+				stack.home();
 			} else if (item.id === "repair") {
 				stack.push(
 					confirm(

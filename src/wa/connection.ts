@@ -20,6 +20,7 @@ import makeWASocket, {
 } from "baileys";
 import { createBaileysLogger, createLogger } from "../log.ts";
 import { isIgnoredJid, jidUser, normalizeJid } from "./jid.ts";
+import { installConsoleGuard } from "./console-guard.ts";
 import { ConnectionLock, type LockHolder } from "./lock.ts";
 import { decideOnClose } from "./reconnect.ts";
 
@@ -123,6 +124,8 @@ export class WhatsAppConnection {
 	}
 
 	async start(): Promise<void> {
+		// libsignal prints session internals to the console, which breaks Pi's screen.
+		installConsoleGuard();
 		this.wantRunning = true;
 		if (this.socket || this.reconnectTimer) return;
 		const lock = this.lock.acquire();

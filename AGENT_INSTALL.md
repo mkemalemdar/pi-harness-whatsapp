@@ -66,7 +66,7 @@ Settings live in `~/.pi/agent/pi-harness-whatsapp/config.json`. Unknown or inval
 | `replies` | `{ "summary", "interim", "touchedFiles", "toolActivity" }` booleans, all `false` by default |
 | `commandAccess` | `owner` (default) · `allowed` |
 | `contacts` | `id` is digits with country code and no `+` (e.g. `905551234567`), or a group JID like `120363…@g.us`. `owner: true` on exactly one person. |
-| `askAtSessionStart`, `forwardToolImages` | booleans (defaults `false`, `true`) |
+| `askAtSessionStart`, `forwardToolImages` | booleans, both `false` by default |
 
 Speech models download by themselves when first needed. You don't have to fetch them.
 

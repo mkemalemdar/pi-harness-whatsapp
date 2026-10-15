@@ -78,7 +78,7 @@ export function defaultSettings(): GlobalSettings {
 		voices: { en: defaultVoiceFor("en")! },
 		speechModel: "base",
 		voiceSpeed: 1.0,
-		forwardToolImages: true,
+		forwardToolImages: false,
 		askAtSessionStart: false,
 		commandAccess: "owner",
 		contacts: [],

@@ -58,7 +58,7 @@ You can also use your own number: the "Message yourself" chat works and counts a
 | **Languages / Default language / Voices** | Which languages Pi listens to and speaks, and with which voice. |
 | **Speech model** | **Fast (base)** · Balanced (small) · Accurate (turbo). See below. |
 | **Voice speed** | Slower 0.9 · Normal 1.0 · Faster 1.2 · Custom (0.5–2.0). |
-| **Forward images from tools** | Screenshots and other images made by tools are sent to you. |
+| **Forward images from tools** | Off by default. When on, every image a tool makes while answering you (e.g. browser screenshots) is sent to you automatically. You can always ask Pi to send a specific image instead. |
 | **Ask at session start** | Asks "WhatsApp for this session?" when a session opens (off by default). |
 | **Command access** | Who may change Pi from WhatsApp: **only the owner** (default) or all allowed contacts. |
 | **Allowed contacts** | Who can talk to Pi. ★ marks the owner. |

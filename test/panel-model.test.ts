@@ -50,14 +50,14 @@ describe("applyRowChange", () => {
 		applyRowChange(settings, "replyLanguage", "Türkçe (Turkish)");
 		applyRowChange(settings, "replies.summary", ON);
 		applyRowChange(settings, "commandAccess", "all allowed contacts");
-		applyRowChange(settings, "forwardToolImages", OFF);
+		applyRowChange(settings, "forwardToolImages", ON);
 		applyRowChange(settings, "voiceSpeed", "1,15");
 		expect(settings).toMatchObject({
 			voiceMode: "voice+text",
 			speechModel: "turbo",
 			replyLanguage: "tr",
 			commandAccess: "allowed",
-			forwardToolImages: false,
+			forwardToolImages: true,
 			voiceSpeed: 1.15,
 		});
 		expect(settings.replies.summary).toBe(true);

@@ -50,6 +50,10 @@ describe("ListMenu", () => {
 		expect(text).toMatch(/→ ● on\s+sent/);
 		expect(text).toContain("Turns it on.");
 		expect(list.render(80).at(-1)).toBe("");
+		// Moving to a row without an explanation keeps the same number of lines.
+		const before = list.render(80).length;
+		list.handleInput(KEY.down);
+		expect(list.render(80).length).toBe(before);
 		list.setStatus("Deleted 2 files.", "ok");
 		expect(list.render(80).join("\n")).toContain("Deleted 2 files.");
 	});

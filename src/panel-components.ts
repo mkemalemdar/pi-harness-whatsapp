@@ -123,8 +123,11 @@ export class ListMenu implements Component {
 			const color = this.status.tone === "error" ? "error" : this.status.tone === "ok" ? "success" : "warning";
 			for (const line of wrapTextWithAnsi(t.fg(color, this.status.text), width)) lines.push(line);
 		}
-		const description = this.selected()?.description;
-		if (description) for (const line of wrapTextWithAnsi(t.fg("muted", description), width)) lines.push(line);
+		// Same height for every row's explanation (blank when there is none), so the list doesn't jump.
+		const wrap = (text: string | undefined) => (text ? wrapTextWithAnsi(t.fg("muted", text), width) : []);
+		const reserved = Math.max(1, ...this.items.map((item) => wrap(item.description).length));
+		const description = wrap(this.selected()?.description);
+		lines.push(...description, ...Array<string>(reserved - description.length).fill(""));
 		lines.push(t.fg("dim", this.options.hint ?? "↑↓ move · Enter choose · Esc back"));
 		// A blank line keeps the menu visually apart from Pi's own lines below it.
 		lines.push("");

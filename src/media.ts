@@ -69,6 +69,42 @@ export class Media implements MediaHandler {
 	constructor(private readonly deps: MediaDeps) {}
 
 	async prepare(message: InboundMessage, makeHeader: (voiceTag?: string) => string): Promise<PreparedPrompt> {
+		const prepared = await this.prepareMessage(message, makeHeader);
+		// A reply to an image: attach that image too, so "what's this?" can be answered.
+		if (message.quotedImage && message.kind !== "image") return this.withQuotedImage(message, prepared);
+		return prepared;
+	}
+
+	private async withQuotedImage(message: InboundMessage, prepared: PreparedPrompt): Promise<PreparedPrompt> {
+		try {
+			const quoted = {
+				key: {
+					remoteJid: message.chatJid,
+					id: message.quotedId ?? null,
+					fromMe: false,
+					...(message.quotedAuthorJid ? { participant: message.quotedAuthorJid } : {}),
+				},
+				message: { imageMessage: message.quotedImage },
+			} as unknown as InboundMessage["raw"];
+			const data = await this.deps.connection.download(quoted);
+			if (data.length === 0 || data.length > MAX_IMAGE_BYTES) return prepared;
+			const text = typeof prepared.content === "string" ? prepared.content : prepared.content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
+			const others = typeof prepared.content === "string" ? [] : prepared.content.filter((part) => part.type !== "text");
+			return {
+				...prepared,
+				content: [
+					{ type: "text", text: `${text} [the image they replied to is attached]` },
+					...others,
+					{ type: "image", data: data.toString("base64"), mimeType: message.quotedImage?.mimetype ?? "image/jpeg" },
+				],
+			};
+		} catch (error) {
+			log.warn("could not download the replied-to image", error);
+			return prepared;
+		}
+	}
+
+	private async prepareMessage(message: InboundMessage, makeHeader: (voiceTag?: string) => string): Promise<PreparedPrompt> {
 		const header = makeHeader();
 		const quoted = message.quotedText ? ` (replying to: "${message.quotedText.slice(0, 300)}")` : "";
 		switch (message.kind) {

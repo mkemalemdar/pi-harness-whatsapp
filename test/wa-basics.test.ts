@@ -3,7 +3,7 @@ import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { WAMessage } from "baileys";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { checkAccess, parseMessage, SeenIds } from "../src/wa/inbound.ts";
+import { addressedToSelf, checkAccess, parseMessage, SeenIds } from "../src/wa/inbound.ts";
 import { ConnectionLock } from "../src/wa/lock.ts";
 import { backoffDelay, CODES, decideOnClose, MAX_DELAY_MS } from "../src/wa/reconnect.ts";
 import { RecentsStore } from "../src/wa/recents.ts";
@@ -237,5 +237,38 @@ describe("isLoggedIn", () => {
 			action: "reconnect",
 			delayMs: 5000,
 		});
+	});
+});
+
+describe("group addressing", () => {
+	const self = { phone: "905550000000", lid: "100000000000001" };
+	const parse = (message: object, contextInfo: object) =>
+		parseMessage({
+			key: { id: "M1", remoteJid: "120363000000000001@g.us", participant: "905551234567@s.whatsapp.net", fromMe: false },
+			messageTimestamp: 1,
+			message: { ...message, ...Object.fromEntries(Object.entries(message).map(([k, v]) => [k, { ...(v as object), contextInfo }])) },
+		} as never)!;
+
+	it("finds an @mention in an image caption, by phone or hidden id", () => {
+		const byPhone = parse({ imageMessage: { caption: "@Pi bu ne?" } }, { mentionedJid: ["905550000000@s.whatsapp.net"] });
+		expect(byPhone.kind).toBe("image");
+		expect(addressedToSelf(byPhone, self, () => false)).toEqual({ mentioned: true, repliedTo: false });
+		const byLid = parse({ extendedTextMessage: { text: "@Pi?" } }, { mentionedJid: ["100000000000001@lid"] });
+		expect(addressedToSelf(byLid, self, () => false).mentioned).toBe(true);
+	});
+
+	it("knows a reply to Pi, by author or by a message id Pi sent", () => {
+		const byAuthor = parse({ extendedTextMessage: { text: "ok" } }, { stanzaId: "X", participant: "905550000000@s.whatsapp.net" });
+		expect(addressedToSelf(byAuthor, self, () => false).repliedTo).toBe(true);
+		const byId = parse({ extendedTextMessage: { text: "ok" } }, { stanzaId: "SENT1", participant: "someone@lid" });
+		expect(addressedToSelf(byId, self, (id) => id === "SENT1").repliedTo).toBe(true);
+		const other = parse({ extendedTextMessage: { text: "ok" } }, { stanzaId: "Y", participant: "4477001122@s.whatsapp.net" });
+		expect(addressedToSelf(other, self, () => false)).toEqual({ mentioned: false, repliedTo: false });
+	});
+
+	it("keeps the replied-to image so it can be downloaded", () => {
+		const reply = parse({ extendedTextMessage: { text: "@Pi bu ne?" } }, { stanzaId: "IMG", participant: "4477001122@s.whatsapp.net", quotedMessage: { imageMessage: { mimetype: "image/png" } } });
+		expect(reply.quotedImage).toEqual({ mimetype: "image/png" });
+		expect(reply.quotedId).toBe("IMG");
 	});
 });

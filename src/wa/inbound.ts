@@ -38,6 +38,13 @@ export interface InboundMessage {
 	text: string;
 	/** Text of the message this one replies to, if any. */
 	quotedText?: string;
+	/** Id and author of the message this one replies to. */
+	quotedId?: string;
+	quotedAuthorJid?: string;
+	/** The image this message replies to (so it can be downloaded), if any. */
+	quotedImage?: proto.Message.IImageMessage;
+	/** People @mentioned in the text or caption. */
+	mentionedJids?: string[];
 	mimeType?: string;
 	fileName?: string;
 	/** Duration of audio/video in seconds. */
@@ -47,13 +54,32 @@ export interface InboundMessage {
 	raw: WAMessage;
 }
 
-function quotedTextOf(content: proto.IMessage): string | undefined {
-	const info =
+/** Reply and mention details; WhatsApp puts them on whichever message type was sent (text or a caption). */
+function contextOf(content: proto.IMessage): proto.IContextInfo | undefined {
+	return (
 		content.extendedTextMessage?.contextInfo ??
 		content.imageMessage?.contextInfo ??
 		content.videoMessage?.contextInfo ??
 		content.audioMessage?.contextInfo ??
-		content.documentMessage?.contextInfo;
+		content.documentMessage?.contextInfo ??
+		content.stickerMessage?.contextInfo ??
+		undefined
+	);
+}
+
+function quoteDetails(info: proto.IContextInfo | undefined): Partial<InboundMessage> {
+	if (!info) return {};
+	const quotedImage = info.quotedMessage ? extractMessageContent(info.quotedMessage)?.imageMessage : undefined;
+	const mentions = (info.mentionedJid ?? []).filter((jid): jid is string => !!jid).map(normalizeJid);
+	return {
+		...(info.stanzaId ? { quotedId: info.stanzaId } : {}),
+		...(info.participant ? { quotedAuthorJid: normalizeJid(info.participant) } : {}),
+		...(quotedImage ? { quotedImage } : {}),
+		...(mentions.length > 0 ? { mentionedJids: mentions } : {}),
+	};
+}
+
+function quotedTextOf(info: proto.IContextInfo | undefined): string | undefined {
 	const quoted = info?.quotedMessage;
 	if (!quoted) return undefined;
 	const inner = extractMessageContent(quoted);
@@ -94,8 +120,9 @@ export function parseMessage(raw: WAMessage): InboundMessage | undefined {
 		timestamp: timestampSeconds > 0 ? timestampSeconds * 1000 : Date.now(),
 		raw,
 	};
-	const quotedText = quotedTextOf(content);
-	const withQuote = quotedText ? { quotedText } : {};
+	const info = contextOf(content);
+	const quotedText = quotedTextOf(info);
+	const withQuote = { ...(quotedText ? { quotedText } : {}), ...quoteDetails(info) };
 
 	if (content.conversation != null || content.extendedTextMessage) {
 		return { ...base, ...withQuote, kind: "text", text: content.conversation ?? content.extendedTextMessage?.text ?? "" };
@@ -137,7 +164,7 @@ export function parseMessage(raw: WAMessage): InboundMessage | undefined {
 			...(document.fileName ? { fileName: document.fileName } : {}),
 		};
 	}
-	if (content.stickerMessage) return { ...base, kind: "sticker", text: "" };
+	if (content.stickerMessage) return { ...base, ...withQuote, kind: "sticker", text: "" };
 	if (content.locationMessage || content.liveLocationMessage) {
 		const location = content.locationMessage ?? content.liveLocationMessage!;
 		const name = "name" in location && location.name ? ` (${location.name})` : "";
@@ -151,6 +178,25 @@ export function parseMessage(raw: WAMessage): InboundMessage | undefined {
 	}
 	if (content.pollUpdateMessage) return { ...base, kind: "poll-vote", text: "", pollUpdate: content.pollUpdateMessage };
 	return { ...base, kind: "other", text: "" };
+}
+
+/**
+ * Whether a group message is meant for Pi: it @mentions this account, or it
+ * replies to one of Pi's messages (by author, or by an id Pi sent).
+ */
+export function addressedToSelf(
+	message: InboundMessage,
+	self: SelfIds,
+	isOwnMessage: (id: string) => boolean,
+): { mentioned: boolean; repliedTo: boolean } {
+	const isSelf = (jid: string | undefined) => {
+		const user = jidUser(jid);
+		return !!user && (user === self.phone || user === self.lid);
+	};
+	return {
+		mentioned: (message.mentionedJids ?? []).some(isSelf),
+		repliedTo: isSelf(message.quotedAuthorJid) || (!!message.quotedId && isOwnMessage(message.quotedId)),
+	};
 }
 
 export interface SelfIds {

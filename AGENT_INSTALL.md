@@ -54,6 +54,7 @@ Then show the remaining settings in **one** message, with the default for each, 
 | Who can use commands | Who may change Pi from WhatsApp | **only the owner** | everyone in Allowed chats (warn them: they could then switch models, compact, or quit Pi) |
 | Ask on/off at session start | Asks whether WhatsApp should be on each time a Pi session opens | **off** (new sessions use the last choice) | on |
 | Other allowed chats | People or groups besides the owner who may talk to Pi | **nobody** | numbers or groups they name (warn them: allowed chats can make Pi run commands on this machine) |
+| In groups, answer | Which messages in an allowed group reach Pi | **replies and @mentions** | replies to Pi only · @mentions only · every message (noisy, and every message uses the model) |
 
 The final answer is always sent and can't be turned off.
 
@@ -95,6 +96,7 @@ Example: English and Turkish, a male voice for Turkish, the owner set, stats on,
 | `replies` | Terminal answers, Progress messages, Live tool log, Changed files, Stats | `{ "terminal", "interim", "toolActivity", "touchedFiles", "summary" }`, booleans, all `false` by default |
 | `forwardToolImages` | Auto-send tool images | boolean, default `false` |
 | `commandAccess` | Who can use commands | `owner` (default) · `allowed` |
+| `groupReplies` | In groups, answer | `both` (default: replies and @mentions) · `replies` · `mentions` · `all` |
 | `askAtSessionStart` | Ask on/off at session start | boolean, default `false` |
 | `contacts` | Allowed chats | `id` is digits with country code and no `+` (e.g. `905551234567`), or a group JID like `120363…@g.us`. `owner: true` on exactly one person. `name` is optional. |
 
@@ -119,6 +121,7 @@ Tell the user:
 Then tell them, briefly:
 
 - Anything that isn't a command goes to Pi as a prompt. Voice notes, images and files work too.
+- If they want Pi in a group: add the bot's number to the group, have someone write there, then allow it in `/whatsapp` → Allowed chats → Pick from recent chats. In the group, people @mention Pi or reply to its messages; Pi also sees the last 20 text messages before that for context. You can't allow a group for them in advance, because the group's id is only known once it appears in recent chats. Remind them that every member of an allowed group can prompt Pi.
 - From WhatsApp they can switch the model (`/model`), the reasoning level (`/think`), compact (`/compact`), stop a run (`/stop`), start a new session (`/new`) and change the reply type, language, speed and extras (`/voice`, `/lang`, `/speed`, `/replies`). Menus come as polls: tap an option.
 - Everything else, including on/off, allowed chats and voices, is in `/whatsapp` in the terminal.
 

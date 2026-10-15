@@ -10,6 +10,9 @@ import { defaultVoiceFor, getLanguage } from "./languages.ts";
 
 export type VoiceMode = "off" | "voice" | "voice+text" | "mirror";
 export type CommandAccess = "owner" | "allowed";
+/** Which messages in an allowed group reach Pi: all, replies to Pi, @mentions of Pi, or replies and mentions. */
+export type GroupReplies = "all" | "replies" | "mentions" | "both";
+export const GROUP_REPLY_MODES: readonly GroupReplies[] = ["all", "replies", "mentions", "both"];
 
 export const VOICE_MODES: readonly VoiceMode[] = ["off", "voice", "voice+text", "mirror"];
 export const SPEED_PRESETS: readonly number[] = [0.9, 1.0, 1.2];
@@ -55,6 +58,7 @@ export interface GlobalSettings {
 	forwardToolImages: boolean;
 	askAtSessionStart: boolean;
 	commandAccess: CommandAccess;
+	groupReplies: GroupReplies;
 	contacts: Contact[];
 	/** WhatsApp state of the most recent session, used for new sessions. */
 	lastEnabled: boolean;
@@ -79,6 +83,7 @@ export function defaultSettings(): GlobalSettings {
 		forwardToolImages: false,
 		askAtSessionStart: false,
 		commandAccess: "owner",
+		groupReplies: "both",
 		contacts: [],
 		lastEnabled: false,
 	};
@@ -169,6 +174,7 @@ export function normalizeSettings(raw: unknown): GlobalSettings {
 		forwardToolImages: bool(raw.forwardToolImages, defaults.forwardToolImages),
 		askAtSessionStart: bool(raw.askAtSessionStart, defaults.askAtSessionStart),
 		commandAccess: pick(raw.commandAccess, ["owner", "allowed"] as const, defaults.commandAccess),
+		groupReplies: pick(raw.groupReplies, GROUP_REPLY_MODES, defaults.groupReplies),
 		contacts,
 		lastEnabled: bool(raw.lastEnabled, defaults.lastEnabled),
 	};

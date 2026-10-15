@@ -39,6 +39,7 @@ describe("buildRows", () => {
 			"whatsapp",
 			"connection",
 			"contacts",
+			"groupReplies",
 			"commandAccess",
 			"askAtSessionStart",
 			"header:replies",

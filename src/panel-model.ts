@@ -8,6 +8,8 @@ import {
 	clampSpeed,
 	type GlobalSettings,
 	MIRROR,
+	GROUP_REPLY_MODES,
+	type GroupReplies,
 	type ReplyToggles,
 	SPEED_PRESETS,
 	VOICE_MODES,
@@ -35,6 +37,20 @@ const VOICE_MODE_DESCRIPTIONS: Record<VoiceMode, string> = {
 
 
 export const ACCESS_LABELS = { owner: "only me", allowed: "all allowed chats" } as const;
+
+export const GROUP_REPLY_LABELS: Record<GroupReplies, string> = {
+	all: "every message",
+	replies: "replies to Pi",
+	mentions: "@mentions only",
+	both: "replies and @mentions",
+};
+
+const GROUP_REPLY_DETAILS: Record<GroupReplies, string> = {
+	all: "everything anyone writes goes to Pi",
+	replies: "when someone replies to one of Pi's messages",
+	mentions: "when someone tags Pi (@ + the bot's name)",
+	both: "replies to Pi, and @mentions",
+};
 
 /** The reply extras, in the order they appear in the panel. */
 export const REPLY_TOGGLES: ReadonlyArray<{
@@ -164,6 +180,15 @@ export function buildRows(state: PanelState): PanelRow[] {
 			description: "People and groups that can talk to Pi. ★ marks the owner.",
 			currentValue: contactsSummary(settings),
 			kind: "contacts",
+		},
+		{
+			id: "groupReplies",
+			label: "In groups, answer",
+			description: "Which group messages Pi answers. Private chats always reach Pi. When it answers, it also sees the last 20 messages since its previous answer.",
+			currentValue: GROUP_REPLY_LABELS[settings.groupReplies],
+			kind: "choice",
+			current: settings.groupReplies,
+			choices: GROUP_REPLY_MODES.map((mode) => ({ value: mode, label: GROUP_REPLY_LABELS[mode], detail: GROUP_REPLY_DETAILS[mode] })),
 		},
 		{
 			id: "commandAccess",
@@ -323,6 +348,9 @@ export function applyChoice(draft: GlobalSettings, id: string, value: string): b
 			return true;
 		case "askAtSessionStart":
 			draft.askAtSessionStart = value === ON;
+			return true;
+		case "groupReplies":
+			if ((GROUP_REPLY_MODES as readonly string[]).includes(value)) draft.groupReplies = value as GroupReplies;
 			return true;
 		case "commandAccess":
 			draft.commandAccess = value === "allowed" ? "allowed" : "owner";

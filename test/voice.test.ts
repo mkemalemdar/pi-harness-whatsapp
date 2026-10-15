@@ -157,6 +157,28 @@ describe.skipIf(!haveModels)("speech engine (real models)", () => {
 	}, 120_000);
 });
 
+describe("Media.prepare", () => {
+	it("attaches the image a message replies to", async () => {
+		const media = new Media({
+			settings: new SettingsStore(join(mkdtempSync(join(tmpdir(), "phw-media-")), "config.json")),
+			connection: { download: async () => Buffer.from("jpegbytes"), presence: async () => {} },
+			queue: {} as SendQueue,
+			voice: {} as VoiceService,
+			inboxDir: tmpdir(),
+		});
+		const message = {
+			id: "1", chatJid: "120363000000000001@g.us", senderJid: "905551234567@s.whatsapp.net", isGroup: true, fromMe: false,
+			timestamp: Date.now(), kind: "text", text: "@Pi bu ne?", quotedId: "Q1", quotedAuthorJid: "4477001122@s.whatsapp.net",
+			quotedImage: { mimetype: "image/png" }, raw: {},
+		} as unknown as Parameters<Media["prepare"]>[0];
+		const prepared = await media.prepare(message, () => "[WhatsApp group]");
+		expect(prepared.content).toEqual([
+			{ type: "text", text: "[WhatsApp group] @Pi bu ne? [the image they replied to is attached]" },
+			{ type: "image", data: Buffer.from("jpegbytes").toString("base64"), mimeType: "image/png" },
+		]);
+	});
+});
+
 describe("cleanInbox", () => {
 	it("removes only files older than a week", async () => {
 		const { cleanInbox, INBOX_KEEP_MS } = await import("../src/media.ts");

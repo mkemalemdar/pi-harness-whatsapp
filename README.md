@@ -49,6 +49,21 @@ Then send `/help` on WhatsApp: it lists every command and shows your current set
 - Messages sent while WhatsApp was off (or Pi wasn't running) are not acted on later, since they may be out of date. Instead, Pi replies once in that chat: "⏸ 3 messages arrived while Pi's WhatsApp was off and were skipped. Send again if still needed."
 - Only one Pi process at a time can hold the WhatsApp connection. Others show `WA: in use by Pi #<pid>`.
 
+## Groups
+
+Pi can take part in a WhatsApp group:
+
+1. Add the bot's number to the group, like any other member.
+2. Allow the group: once someone has written in it, `/whatsapp` → **Allowed chats** → **Pick from recent chats** lists it with 👥.
+3. In the group, **@mention Pi** (type `@` and pick the bot's number) or **reply to one of Pi's messages**. Pi answers in the group, and it knows who asked.
+
+What Pi reacts to is set by **In groups, answer**: **replies and @mentions** (default), only replies, only @mentions, or every message.
+
+- **Context:** when Pi is addressed, it also gets the last 20 messages written since it was last addressed, so "@Pi what do you think?" makes sense. Only text goes into that context; images, files and voice notes show up only as a note like `[sent an image]`. These messages are kept in memory only.
+- **Images:** send an image with a caption that @mentions Pi, or reply to someone's image and @mention Pi; Pi sees that image.
+- **Commands** (`/status`, `/model`, …) work in groups without a mention, with the same rules as in private chats: only the owner can change Pi by default. A number as a poll answer only counts in a group if it replies to the poll.
+- **Be careful:** everyone in an allowed group can ask Pi things, and Pi can run commands on this machine. Only allow groups where you trust every member.
+
 ## Settings: `/whatsapp`
 
 Every row opens a small menu with the choices and a short explanation. Nothing changes until you pick something. Defaults are in **bold**.
@@ -58,6 +73,7 @@ Every row opens a small menu with the choices and a short explanation. Nothing c
 | Connection | WhatsApp (this session) | On · **Off**. Continued sessions get their own value back; new sessions start with the last value you chose. |
 | | Connection | Connect now, show a new QR code (pair again), or log out. |
 | | Allowed chats | People and groups that can talk to Pi. ★ marks the owner. Pick from recent chats, add a number by hand, rename, remove, or make someone the owner. |
+| | In groups, answer | **Replies and @mentions** · replies to Pi · @mentions only · every message. See [Groups](#groups). |
 | | Who can use commands | **Only me** (the owner) · all allowed chats. |
 | | Ask on/off at session start | On · **Off**. Asks whether WhatsApp should be on when a session opens. |
 | Replies | Final answer | Always on. |

@@ -14,7 +14,7 @@ import { createLogger } from "./log.ts";
 import { formatActivity, formatTouchedFiles, RunReport } from "./run-report.ts";
 import { type Contact, MIRROR, type SettingsStore } from "./settings.ts";
 import type { WhatsAppConnection } from "./wa/connection.ts";
-import { type Access, checkAccess, type InboundMessage, parseMessage, SeenIds, senderIdentity } from "./wa/inbound.ts";
+import { type Access, addressedToSelf, checkAccess, type InboundMessage, parseMessage, SeenIds, senderIdentity } from "./wa/inbound.ts";
 import { contactJid, isLidJid, jidUser, phoneJid } from "./wa/jid.ts";
 import type { SendQueue } from "./wa/outbound.ts";
 import type { RecentsStore } from "./wa/recents.ts";
@@ -30,6 +30,8 @@ const ACTIVITY_STEPS_SHOWN = 8;
 /** How long a prompt may take to start before the chat is told it didn't (no model, expired login…). */
 const START_TIMEOUT_MS = 8_000;
 const BUSY_POLL_MS = 500;
+/** Group messages not meant for Pi that are kept as context for when it is addressed. */
+const GROUP_CONTEXT_MESSAGES = 20;
 const CUT_OFF_NOTICE = "⚠️ The model hit its output limit before writing an answer. Try again, or raise the model's output limit.";
 
 type PromptContent = string | Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }>;
@@ -104,6 +106,14 @@ export interface BridgeDeps {
 	media?: MediaHandler;
 }
 
+/** Puts a block of text in front of a prompt (before the label of a text part, or as a new text part). */
+function prependText(content: PromptContent, prefix: string): PromptContent {
+	if (typeof content === "string") return `${prefix}\n${content}`;
+	const [first, ...rest] = content;
+	if (first?.type === "text") return [{ type: "text", text: `${prefix}\n${first.text}` }, ...rest];
+	return [{ type: "text", text: prefix }, ...content];
+}
+
 /** The text of a prompt, as Pi stores it in the user message. */
 function promptText(content: PromptContent | undefined): string {
 	if (typeof content === "string") return content.trim();
@@ -124,6 +134,8 @@ export class Bridge {
 	private agentActive = false;
 	/** Prompts go to Pi one at a time, in the order they arrived. */
 	private sendChain: Promise<void> = Promise.resolve();
+	/** Per allowed group: recent messages Pi didn't answer (text only, in memory). */
+	private readonly groupContext = new Map<string, Array<{ name: string; text: string }>>();
 	private enabledAt = Date.now();
 	private skippedWhileOff = new Map<string, number>();
 	private skippedNoticeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -198,10 +210,51 @@ export class Bridge {
 			return;
 		}
 
+		if (message.isGroup && !this.isForPi(message)) {
+			// Not meant for Pi: keep it as context for the next time Pi is addressed.
+			this.rememberGroupMessage(message);
+			return;
+		}
+
 		void this.deps.connection.markRead(message.raw.key);
 		// Commands, and number replies to menus, never reach the model.
 		if (message.kind === "text" && this.deps.commands && (await this.deps.commands.handle(message, access))) return;
 		await this.forwardToPi(message, access);
+	}
+
+	/** In a group: does this message ask Pi something (per "In groups, answer")? Commands always do. */
+	private isForPi(message: InboundMessage): boolean {
+		const mode = this.deps.settings.get().groupReplies;
+		if (mode === "all" || message.text.trimStart().startsWith("/")) return true;
+		const { mentioned, repliedTo } = addressedToSelf(message, this.deps.connection.selfIds(), (id) => this.deps.connection.isOwnMessage(id));
+		return ((mode === "replies" || mode === "both") && repliedTo) || ((mode === "mentions" || mode === "both") && mentioned);
+	}
+
+	private rememberGroupMessage(message: InboundMessage): void {
+		const placeholder: Partial<Record<InboundMessage["kind"], string>> = {
+			image: "[sent an image]",
+			video: "[sent a video]",
+			audio: "[sent a voice note]",
+			document: "[sent a file]",
+			sticker: "[sent a sticker]",
+			other: "[sent a message Pi can't read]",
+		};
+		// Files never go into the context: only a short note that one was sent, plus its caption.
+		const text = [placeholder[message.kind], message.text.trim()].filter(Boolean).join(" ");
+		if (!text) return;
+		const name = message.pushName ?? (senderIdentity(message).phone ? `+${senderIdentity(message).phone}` : "someone");
+		const history = this.groupContext.get(message.chatJid) ?? [];
+		history.push({ name, text: text.length > 500 ? `${text.slice(0, 500)}…` : text });
+		this.groupContext.set(message.chatJid, history.slice(-GROUP_CONTEXT_MESSAGES));
+	}
+
+	/** The group's messages since Pi was last addressed, as a context block (and forgets them). */
+	private takeGroupContext(message: InboundMessage, access: Access): string | undefined {
+		const history = this.groupContext.get(message.chatJid);
+		this.groupContext.delete(message.chatJid);
+		if (!history?.length) return undefined;
+		const lines = history.map((entry) => `${entry.name}: ${entry.text}`);
+		return [`[WhatsApp group "${access.contact?.name ?? "group"}" · earlier messages, for context]`, ...lines].join("\n");
 	}
 
 	/** Fills in the phone number for LID-only senders when WhatsApp has told us the mapping. */
@@ -311,8 +364,10 @@ export class Bridge {
 		const prepared = this.deps.media
 			? await this.deps.media.prepare(message, header)
 			: { content: `${header()} ${message.text || `(sent ${message.kind})`}`, voice: false };
+		const context = message.isGroup ? this.takeGroupContext(message, access) : undefined;
+		if (context) prepared.content = prependText(prepared.content, context);
 		// Message text stays out of the log on purpose.
-		log.info(`→ Pi: ${message.kind} message from ${header}`);
+		log.info(`→ Pi: ${message.kind} message from ${header()}`);
 		const entry: Expected = {
 			text: promptText(prepared.content),
 			chatJid: message.chatJid,
@@ -379,7 +434,7 @@ export class Bridge {
 			"- Keep answers short and chat-friendly. Summarize long code, and write files to disk instead.",
 			"- Voice notes arrive already transcribed, e.g. `[WhatsApp · Name · voice note · your reply is spoken to Name]`. Transcripts can contain misheard words.",
 			"- When the label says \"your reply is spoken\", your answer becomes voice notes automatically (long answers are split into parts). Write it exactly as it should be said: no symbols, units or abbreviations (\"13 derece\", not \"13°C\"; \"yüzde 40\", not \"%40\"; \"25 kilometers\", not \"25 km\"), and no code, tables, links or emoji.",
-			"- Group labels look like `[WhatsApp group \"Team\" · Name · your reply goes to the group]`: answer the group.",
+			"- Group labels look like `[WhatsApp group \"Team\" · Name · your reply goes to the group]`: answer the group. You only get group messages that mention or reply to you; the ones before it may come first as `earlier messages, for context`. Use them to understand the question, but answer only the last message.",
 			`- ${language}`,
 		].join("\n");
 	}

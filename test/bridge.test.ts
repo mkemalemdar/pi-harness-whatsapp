@@ -269,6 +269,62 @@ describe("Bridge routing", () => {
 		expect(label).toBe("[WhatsApp · Alex · voice note · your reply goes to Alex]");
 	});
 
+	describe("groups", () => {
+		const GROUP = "120363000000000001@g.us";
+		const BOT = "905550000000";
+		let n = 0;
+		function groupMessage(text: string, extra: { mention?: boolean; replyToBot?: boolean; image?: boolean } = {}): WAMessage {
+			n++;
+			const contextInfo = {
+				...(extra.mention ? { mentionedJid: [`${BOT}@s.whatsapp.net`] } : {}),
+				...(extra.replyToBot ? { stanzaId: "OUT1", participant: `${BOT}@s.whatsapp.net`, quotedMessage: { conversation: "Pi's earlier answer" } } : {}),
+			};
+			return {
+				key: { id: `G${n}`, remoteJid: GROUP, participant: `${OWNER_PHONE}@s.whatsapp.net`, fromMe: false },
+				messageTimestamp: Math.floor(Date.now() / 1000),
+				pushName: "Alex",
+				message: extra.image
+					? { imageMessage: { caption: text, mimetype: "image/jpeg", contextInfo } }
+					: { extendedTextMessage: { text, contextInfo } },
+			} as WAMessage;
+		}
+		beforeEach(() => {
+			h.settings.update((draft) => {
+				draft.contacts.push({ id: GROUP, name: "Team" });
+			});
+		});
+
+		it("answers replies and @mentions by default, with the messages before as context", async () => {
+			await h.bridge.handleUpsert([groupMessage("deploy tomorrow?")], "notify");
+			await h.bridge.handleUpsert([groupMessage("caption text", { image: true })], "notify");
+			expect(h.prompts).toEqual([]);
+			await h.bridge.handleUpsert([groupMessage("@Pi what do you think?", { mention: true })], "notify");
+			expect(h.prompts).toHaveLength(1);
+			expect(h.prompts[0]!.content).toBe(
+				'[WhatsApp group "Team" · earlier messages, for context]\nAlex: deploy tomorrow?\nAlex: [sent an image] caption text\n' +
+					'[WhatsApp group "Team" · Alex · your reply goes to the group] @Pi what do you think?',
+			);
+			start(0);
+			await h.bridge.onSettled(false);
+			await h.bridge.handleUpsert([groupMessage("and now?", { replyToBot: true })], "notify");
+			// A reply to Pi counts too; the context was used up by the previous question.
+			expect(h.prompts[1]!.content).toBe('[WhatsApp group "Team" · Alex · your reply goes to the group] and now?');
+		});
+
+		it("follows the setting", async () => {
+			h.settings.update((draft) => {
+				draft.groupReplies = "mentions";
+			});
+			await h.bridge.handleUpsert([groupMessage("thanks", { replyToBot: true })], "notify");
+			expect(h.prompts).toEqual([]);
+			h.settings.update((draft) => {
+				draft.groupReplies = "all";
+			});
+			await h.bridge.handleUpsert([groupMessage("hello everyone")], "notify");
+			expect(h.prompts).toHaveLength(1);
+		});
+	});
+
 	it("ignores duplicates, non-live messages and strangers", async () => {
 		const message = incoming("once");
 		await h.bridge.handleUpsert([message], "notify");

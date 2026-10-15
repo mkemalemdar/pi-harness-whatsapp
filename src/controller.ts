@@ -434,9 +434,9 @@ export class Controller implements PanelHost, CommandEnv {
 	private onDownload(spec: ModelSpec, fraction: number | undefined): void {
 		if (fraction === undefined) {
 			this.downloads.delete(spec.name);
-			if (this.voice.models.isInstalled(spec)) this.ctx?.ui.notify(`WhatsApp: ${spec.name} is ready`, "info");
+			if (this.voice.models.isInstalled(spec)) this.ctx?.ui.notify(`WhatsApp: ${this.voice.describe(spec)} is ready`, "info");
 		} else {
-			if (!this.downloads.has(spec.name)) this.ctx?.ui.notify(`WhatsApp: downloading ${spec.name} (~${spec.approxMB} MB)…`, "info");
+			if (!this.downloads.has(spec.name)) this.ctx?.ui.notify(`WhatsApp: downloading ${this.voice.describe(spec)} (~${spec.approxMB} MB)…`, "info");
 			this.downloads.set(spec.name, { spec, fraction });
 		}
 		this.renderStatus();

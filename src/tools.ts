@@ -11,6 +11,7 @@ import { Type } from "typebox";
 import { contactLabel } from "./contacts-flow.ts";
 import type { Controller } from "./controller.ts";
 import { createLogger } from "./log.ts";
+import { normalizeContactId } from "./settings.ts";
 import { contactJid } from "./wa/jid.ts";
 
 const log = createLogger("tools");
@@ -44,9 +45,10 @@ export function mimeFor(path: string): string {
 export function resolveRecipient(controller: Controller, to: string | undefined): string {
 	const contacts = controller.settings.get().contacts;
 	if (to?.trim()) {
-		const needle = to.trim().toLowerCase().replace(/^\+/, "");
+		const needle = to.trim().toLowerCase();
+		const number = normalizeContactId(needle);
 		const match = contacts.find(
-			(contact) => contact.id === needle || contact.name?.toLowerCase() === needle || contact.lid === needle,
+			(contact) => (!!number && contact.id === number) || contact.name?.toLowerCase() === needle || contact.lid === needle.replace(/^\+/, ""),
 		);
 		if (!match) throw new Error(`"${to}" is not an allowed WhatsApp contact. Allowed: ${contacts.map(contactLabel).join(", ") || "none"}`);
 		return contactJid(match);

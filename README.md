@@ -124,7 +124,7 @@ Voice notes are transcribed on your machine and given to Pi with a label, e.g. `
 
 Supported languages: **English, Turkish, German, French, Spanish, Italian, Portuguese, Dutch, Polish, Russian, Ukrainian, Arabic, Hindi, Swedish and Finnish**. Pi understands and speaks all of them with the same two models, so adding a language downloads nothing.
 
-| What | Model | Download |
+| What | Model | Size on disk |
 |---|---|---|
 | Understanding voice notes | Whisper large-v3-turbo, int8, [exported for OpenVINO by Intel](https://huggingface.co/OpenVINO/whisper-large-v3-turbo-int8-ov) | 828 MB |
 | Speaking replies | [Supertonic 3](https://huggingface.co/Supertone/supertonic-3) by Supertone (10 voices) | 401 MB |

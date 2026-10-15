@@ -1,6 +1,6 @@
 /** Which language a text is in, limited to the languages the user enabled. */
 
-import { franc } from "franc-min";
+import { franc } from "franc";
 import { getLanguage } from "../languages.ts";
 import { MIRROR } from "../settings.ts";
 

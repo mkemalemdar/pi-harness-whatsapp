@@ -161,6 +161,17 @@ describe("PollMenus", () => {
 		expect(await h.menus.handleNumberReply(h.text("1"), true)).toBe(false);
 	});
 
+	it("in a group, takes a number only as a reply to the menu", async () => {
+		const h = new PollHarness();
+		const picked: string[][] = [];
+		await h.menus.show(CHAT, colorMenu(picked));
+		const inGroup = (quotedId?: string) => ({ ...h.text("1"), isGroup: true, ...(quotedId ? { quotedId } : {}) });
+		expect(await h.menus.handleNumberReply(inGroup(), true)).toBe(false);
+		expect(await h.menus.handleNumberReply(inGroup("other"), true)).toBe(false);
+		expect(await h.menus.handleNumberReply(inGroup(h.sentPolls[0]!.id), true)).toBe(true);
+		expect(picked).toEqual([["red"]]);
+	});
+
 	it("stops taking number replies once the chat talks to Pi", async () => {
 		const h = new PollHarness();
 		await h.menus.show(CHAT, colorMenu([]));

@@ -130,7 +130,6 @@ export const LANGUAGES: readonly LanguageInfo[] = [
 		name: "Ukrainian",
 		nativeName: "Українська",
 		sample: "Привіт, ось так я звучу. Тобі подобається цей голос?",
-		// "ukrainian_tts" is character-based and sherpa-onnx feeds it phonemes, so it stays almost silent.
 		voices: VOICES,
 	},
 	{

@@ -1,7 +1,7 @@
 {
   "name": "pi-harness-whatsapp",
   "version": "0.1.0",
-  "description": "Talk to the Pi coding agent from WhatsApp: QR pairing, automatic replies, voice notes in and out (local Whisper + Piper), poll menus to control Pi.",
+  "description": "Talk to the Pi coding agent from WhatsApp: QR pairing, automatic replies, voice notes in and out (local Whisper + Supertonic on OpenVINO), group chats, poll menus to control Pi.",
   "type": "module",
   "license": "MIT",
   "author": "mkemalemdar",
@@ -21,7 +21,10 @@
     "baileys",
     "voice",
     "whisper",
-    "piper"
+    "supertonic",
+    "openvino",
+    "tts",
+    "speech-to-text"
   ],
   "files": [
     "index.ts",
@@ -53,7 +56,7 @@
   },
   "dependencies": {
     "baileys": "7.0.0-rc14",
-    "franc-min": "^6.2.0",
+    "franc": "^6.2.0",
     "qrcode-terminal": "^0.12.0"
   },
   "devDependencies": {

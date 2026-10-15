@@ -28,6 +28,8 @@ export class SpeechEngine {
 	private tts: { dir: string; engine: Supertonic } | undefined;
 	private loading = new Map<string, Promise<unknown>>();
 	private idleTimer: ReturnType<typeof setTimeout> | undefined;
+	/** One job at a time: a loaded model can't run two requests at once. */
+	private queue: Promise<unknown> = Promise.resolve();
 
 	/** `runtimeDir` holds node_modules/openvino-node and node_modules/openvino-genai-node. */
 	constructor(private readonly runtimeDir: () => string) {}
@@ -37,22 +39,23 @@ export class SpeechEngine {
 	}
 
 	/** Speech → text. `language` forces a language (e.g. "tr"); otherwise Whisper detects it. */
-	async transcribe(modelDir: string, samples: Float32Array, language?: string): Promise<{ text: string; ms: number }> {
-		const pipeline = await this.loadWhisper(modelDir);
-		const started = Date.now();
-		const result = await pipeline.generate(samples, {
-			generationConfig: { task: "transcribe", ...(language ? { language: `<|${language}|>` } : {}) },
+	transcribe(modelDir: string, samples: Float32Array, language?: string): Promise<{ text: string; ms: number }> {
+		return this.serial(async () => {
+			const pipeline = await this.loadWhisper(modelDir);
+			const started = Date.now();
+			const result = await pipeline.generate(samples, {
+				generationConfig: { task: "transcribe", ...(language ? { language: `<|${language}|>` } : {}) },
+			});
+			return { text: (result.texts[0] ?? "").replace(/\s+/g, " ").trim(), ms: Date.now() - started };
 		});
-		this.touch();
-		return { text: (result.texts[0] ?? "").replace(/\s+/g, " ").trim(), ms: Date.now() - started };
 	}
 
 	/** Text → mono samples at the engine's sample rate. */
-	async speak(modelDir: string, text: string, language: string, voice: string, speed: number): Promise<{ samples: Float32Array; sampleRate: number }> {
-		const tts = await this.loadTts(modelDir);
-		const samples = await tts.speak(text, language, voice, speed);
-		this.touch();
-		return { samples, sampleRate: tts.sampleRate };
+	speak(modelDir: string, text: string, language: string, voice: string, speed: number): Promise<{ samples: Float32Array; sampleRate: number }> {
+		return this.serial(async () => {
+			const tts = await this.loadTts(modelDir);
+			return { samples: await tts.speak(text, language, voice, speed), sampleRate: tts.sampleRate };
+		});
 	}
 
 	async unload(): Promise<void> {
@@ -90,6 +93,16 @@ export class SpeechEngine {
 			log.info(`text-to-speech loaded in ${Date.now() - started}ms`);
 			return engine;
 		});
+	}
+
+	/** Runs `job` after the jobs before it; the idle timer starts once it's done. */
+	private serial<T>(job: () => Promise<T>): Promise<T> {
+		const result = this.queue.then(job, job);
+		this.queue = result.then(
+			() => this.touch(),
+			() => this.touch(),
+		);
+		return result;
 	}
 
 	/** Concurrent loads of the same model share one promise. */

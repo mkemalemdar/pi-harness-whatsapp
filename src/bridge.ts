@@ -49,6 +49,8 @@ export interface PreparedPrompt {
 export interface CommandHandler {
 	/** Returns true when the message was a command and is fully handled. */
 	handle(message: InboundMessage, access: Access): Promise<boolean>;
+	/** The text is a known command (e.g. "/status"), not just something starting with "/". */
+	isCommand(text: string): boolean;
 	handleVote(message: InboundMessage, access: Access): Promise<void>;
 }
 
@@ -210,10 +212,14 @@ export class Bridge {
 			return;
 		}
 
-		if (message.isGroup && !this.isForPi(message)) {
-			// Not meant for Pi: keep it as context for the next time Pi is addressed.
-			this.rememberGroupMessage(message);
-			return;
+		if (message.isGroup) {
+			// WhatsApp writes a mention as "@<number>"; the model reads "@Pi" better.
+			message.text = this.namePi(message.text);
+			if (!this.isForPi(message)) {
+				// Not meant for Pi: keep it as context for the next time Pi is addressed.
+				this.rememberGroupMessage(message);
+				return;
+			}
 		}
 
 		void this.deps.connection.markRead(message.raw.key);
@@ -222,12 +228,23 @@ export class Bridge {
 		await this.forwardToPi(message, access);
 	}
 
-	/** In a group: does this message ask Pi something (per "In groups, answer")? Commands always do. */
+	/** In a group: does this message ask Pi something (per "In groups, answer")? Commands and menu answers always do. */
 	private isForPi(message: InboundMessage): boolean {
 		const mode = this.deps.settings.get().groupReplies;
-		if (mode === "all" || message.text.trimStart().startsWith("/")) return true;
+		if (mode === "all") return true;
+		if (message.kind === "text" && this.deps.commands?.isCommand(message.text)) return true;
 		const { mentioned, repliedTo } = addressedToSelf(message, this.deps.connection.selfIds(), (id) => this.deps.connection.isOwnMessage(id));
+		// A number replying to one of Pi's menus picks an option, whatever the mode.
+		if (repliedTo && /^\s*\d{1,2}\s*$/.test(message.text)) return true;
 		return ((mode === "replies" || mode === "both") && repliedTo) || ((mode === "mentions" || mode === "both") && mentioned);
+	}
+
+	/** Replaces "@<this account's number or LID>" with "@Pi". */
+	private namePi(text: string): string {
+		const { phone, lid } = this.deps.connection.selfIds();
+		let named = text;
+		for (const id of [phone, lid]) if (id) named = named.replaceAll(`@${id}`, "@Pi");
+		return named;
 	}
 
 	private rememberGroupMessage(message: InboundMessage): void {

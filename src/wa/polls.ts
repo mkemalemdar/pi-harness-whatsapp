@@ -140,7 +140,8 @@ export class PollMenus {
 	async handleNumberReply(message: InboundMessage, mayChange: boolean): Promise<boolean> {
 		const match = /^\s*(\d{1,2})\s*$/.exec(message.text);
 		if (!match) return false;
-		const poll = this.newestIn(message.chatJid);
+		// In a group, a number only answers the menu it replies to (people send numbers to each other).
+		const poll = message.isGroup ? this.repliedPoll(message) : this.newestIn(message.chatJid);
 		if (!poll) return false;
 		const label = poll.labels[Number(match[1]) - 1];
 		if (!label) {
@@ -233,6 +234,12 @@ export class PollMenus {
 		}
 		log.warn("could not decrypt a poll vote", { creators: creators.map(jidUser), voters: voters.map(jidUser) });
 		return undefined;
+	}
+
+	/** The single-choice menu a message replies to, if it is still active. */
+	private repliedPoll(message: InboundMessage): ActivePoll | undefined {
+		const poll = message.quotedId ? this.polls.get(message.quotedId) : undefined;
+		return poll && poll.chatJid === message.chatJid && !poll.menu.multi && !this.isExpired(poll) ? poll : undefined;
 	}
 
 	private newestIn(chatJid: string): ActivePoll | undefined {

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — unreleased
+## 0.1.0 — 2026-10-15
 
 First release.
 
@@ -8,7 +8,7 @@ First release.
 - **A real off switch:** off disconnects, hides the WhatsApp tools, and skips (and reports) messages that arrived meanwhile. On/off is saved per session.
 - **Automatic replies:** only for runs started from WhatsApp, with optional summary, in-between messages, touched files and a live tool-activity message. Each answer goes to the chat whose message it answers; a prompt typed in the terminal keeps its answer in the terminal, even when WhatsApp messages wait behind it. If Pi can't start on a message, the chat is told. Optional "Terminal answers" also sends the owner the answers to terminal prompts. Each message's label says who is talking and where (and whether spoken) the reply goes, so small models answer the sender directly. Status lines are always text, and a cut-off answer is reported instead of "Done". Markdown is converted to WhatsApp formatting, and long messages are split safely.
 - **Voice:** voice notes are understood by Whisper large-v3-turbo and replies are spoken by Supertonic 3, both run locally through Intel's OpenVINO on the CPU; 15 languages and 10 voices, chosen per language; reply modes text / voice / voice + text / mirror me. The engine and the models download on first use (pinned versions, checked against their checksums), not through npm.
-- **Commands and poll menus:** /help /status /stop /compact /autocompact /model /think /voice /lang /speed /replies /languages /new /off /quit /restart, with owner-only access by default. Replying with a number answers a menu only until it's answered or you message Pi.
+- **Commands and poll menus:** /help /status /stop /compact /autocompact /model /think /voice /lang /speed /replies /languages /new /off /quit /restart, with owner-only access by default. Replying with a number answers a menu only until it's answered or you message Pi; in groups, only when it replies to the menu.
 - **Media:** images go to the model; files are saved for Pi to read; optional tools send images and files; long spoken answers are split into several voice notes; images made by tools can be forwarded automatically (off by default).
 - **Contacts and groups:** allow-list by phone number or WhatsApp's hidden id (LID), recent chats, first-contact onboarding, "message yourself" support. In groups Pi answers replies and @mentions by default (or only one of them, or every message), gets the last 20 text messages as context, and sees images that are @mentioned in a caption or replied to.
 - **AGENT_INSTALL.md:** guidance for AI agents installing the extension: what to check, what to ask the user (including every setting with its default), how to write the settings, voice ids per language, telling the user about `/help`, and what never to touch.

@@ -323,6 +323,29 @@ describe("Bridge routing", () => {
 			await h.bridge.handleUpsert([groupMessage("hello everyone")], "notify");
 			expect(h.prompts).toHaveLength(1);
 		});
+
+		it("takes known commands and menu numbers, and calls the mention @Pi", async () => {
+			const handled: string[] = [];
+			(h.bridge as unknown as { deps: { commands: unknown } }).deps.commands = {
+				isCommand: (text: string) => text.startsWith("/status"),
+				handle: async (message: { text: string }) => {
+					handled.push(message.text);
+					return message.text.startsWith("/") || /^\d+$/.test(message.text);
+				},
+				handleVote: async () => {},
+			};
+			h.settings.update((draft) => {
+				draft.groupReplies = "mentions";
+			});
+			await h.bridge.handleUpsert([groupMessage("/home/alex is full")], "notify");
+			await h.bridge.handleUpsert([groupMessage("/status")], "notify");
+			await h.bridge.handleUpsert([groupMessage("2", { replyToBot: true })], "notify");
+			await h.bridge.handleUpsert([groupMessage(`@${BOT} look`, { mention: true })], "notify");
+			expect(handled).toEqual(["/status", "2", "@Pi look"]);
+			expect(h.prompts[0]!.content).toBe(
+				'[WhatsApp group "Team" · earlier messages, for context]\nAlex: /home/alex is full\n[WhatsApp group "Team" · Alex · your reply goes to the group] @Pi look',
+			);
+		});
 	});
 
 	it("ignores duplicates, non-live messages and strangers", async () => {

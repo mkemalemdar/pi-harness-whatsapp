@@ -36,6 +36,11 @@ export class CommandRouter implements CommandHandler {
 		return this.commands.find((command) => command.name === name || command.aliases?.includes(name));
 	}
 
+	isCommand(text: string): boolean {
+		const parsed = parseCommand(text);
+		return !!parsed && !!this.find(parsed.name);
+	}
+
 	mayChange(access: Access): boolean {
 		return access.isOwner || this.env.settings.get().commandAccess === "allowed";
 	}

@@ -19,6 +19,9 @@ describe("language choice", () => {
 		expect(detectLanguage("I ran the tests and they all passed, what next?", both)).toBe("en");
 		expect(detectLanguage("ok", both)).toBeUndefined();
 		expect(detectLanguage("anything", ["tr"])).toBe("tr");
+		// Finnish and Swedish need the full language detector (franc-min doesn't know Finnish).
+		expect(detectLanguage("Hei, tänään on kaunis päivä ja menemme kauppaan ostamaan ruokaa.", ["en", "fi", "sv"])).toBe("fi");
+		expect(detectLanguage("Idag är det en vacker dag och vi ska handla mat i affären.", ["en", "fi", "sv"])).toBe("sv");
 	});
 
 	it("prefers a fixed reply language, then the text, then the user's language, then the default", () => {

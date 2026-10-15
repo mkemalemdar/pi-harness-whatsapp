@@ -152,11 +152,20 @@ describe("PollMenus", () => {
 		await h.menus.show(CHAT, { ...colorMenu(picked), gated: true });
 		expect(await h.menus.handleNumberReply(h.text("2"), false)).toBe(true);
 		expect(h.texts.at(-1)).toMatch(/Only the owner/);
-		expect(await h.menus.handleNumberReply(h.text("2"), true)).toBe(true);
-		expect(picked).toEqual([["green"]]);
 		expect(await h.menus.handleNumberReply(h.text("9"), true)).toBe(true);
 		expect(h.texts.at(-1)).toBe("Pick a number from 1 to 2.");
 		expect(await h.menus.handleNumberReply(h.text("hello"), true)).toBe(false);
+		expect(await h.menus.handleNumberReply(h.text("2"), true)).toBe(true);
+		expect(picked).toEqual([["green"]]);
+		// Answered: the next bare number is for Pi.
+		expect(await h.menus.handleNumberReply(h.text("1"), true)).toBe(false);
+	});
+
+	it("stops taking number replies once the chat talks to Pi", async () => {
+		const h = new PollHarness();
+		await h.menus.show(CHAT, colorMenu([]));
+		h.menus.endNumberReplies(CHAT);
+		expect(await h.menus.handleNumberReply(h.text("2"), true)).toBe(false);
 	});
 
 	it("reports ticks and unticks for multi-choice menus", async () => {

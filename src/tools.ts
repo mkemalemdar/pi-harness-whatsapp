@@ -12,7 +12,7 @@ import { contactLabel } from "./contacts-flow.ts";
 import type { Controller } from "./controller.ts";
 import { createLogger } from "./log.ts";
 import { chooseSpeechLanguage } from "./voice/language.ts";
-import { isGroupJid, phoneJid } from "./wa/jid.ts";
+import { contactJid } from "./wa/jid.ts";
 
 const log = createLogger("tools");
 const MAX_SEND_BYTES = 60 * 1024 * 1024;
@@ -50,12 +50,12 @@ export function resolveRecipient(controller: Controller, to: string | undefined)
 			(contact) => contact.id === needle || contact.name?.toLowerCase() === needle || contact.lid === needle,
 		);
 		if (!match) throw new Error(`"${to}" is not an allowed WhatsApp contact. Allowed: ${contacts.map(contactLabel).join(", ") || "none"}`);
-		return isGroupJid(match.id) ? match.id : match.lid === match.id ? `${match.id}@lid` : phoneJid(match.id);
+		return contactJid(match);
 	}
 	const active = controller.bridge.activeChat();
 	if (active) return active;
 	const owner = contacts.find((contact) => contact.owner);
-	if (owner) return owner.lid === owner.id ? `${owner.id}@lid` : phoneJid(owner.id);
+	if (owner) return contactJid(owner);
 	throw new Error("No WhatsApp chat to send to: nobody is allowed yet.");
 }
 

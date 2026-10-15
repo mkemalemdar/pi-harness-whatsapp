@@ -44,6 +44,7 @@ describe("buildRows", () => {
 			"header:replies",
 			"replies.final",
 			"voiceMode",
+			"replies.terminal",
 			"replies.interim",
 			"replies.toolActivity",
 			"replies.touchedFiles",

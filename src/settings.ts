@@ -29,6 +29,8 @@ export interface ReplyToggles {
 	touchedFiles: boolean;
 	/** Keep one live message with the latest tool steps. */
 	toolActivity: boolean;
+	/** Also send the owner Pi's answers to prompts typed in the terminal. */
+	terminal: boolean;
 }
 
 export interface Contact {
@@ -71,7 +73,7 @@ export const SESSION_ENTRY_TYPE = "pi-harness-whatsapp/session";
 export function defaultSettings(): GlobalSettings {
 	return {
 		version: 1,
-		replies: { summary: false, interim: false, touchedFiles: false, toolActivity: false },
+		replies: { summary: false, interim: false, touchedFiles: false, toolActivity: false, terminal: false },
 		voiceMode: "mirror",
 		replyLanguage: MIRROR,
 		languages: ["en"],
@@ -161,6 +163,7 @@ export function normalizeSettings(raw: unknown): GlobalSettings {
 			interim: bool(replies.interim, defaults.replies.interim),
 			touchedFiles: bool(replies.touchedFiles, defaults.replies.touchedFiles),
 			toolActivity: bool(replies.toolActivity, defaults.replies.toolActivity),
+			terminal: bool(replies.terminal, defaults.replies.terminal),
 		},
 		voiceMode: pick(raw.voiceMode, VOICE_MODES, defaults.voiceMode),
 		replyLanguage,

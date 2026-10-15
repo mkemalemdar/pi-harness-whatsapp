@@ -29,17 +29,22 @@ Talk to the [Pi coding agent](https://pi.dev) from WhatsApp: text, voice notes, 
 pi install npm:pi-harness-whatsapp
 ```
 
+Or straight from GitHub: `pi install git:github.com/mkemalemdar/pi-harness-whatsapp`.
+
 Start Pi and run `/whatsapp`. Set **WhatsApp** to **on**, and a QR code appears above the editor. On your phone, go to **WhatsApp → Settings → Linked devices → Link a device** and scan it. That's it.
 
-Nobody is allowed to talk to Pi yet. Send a message to the paired number from your phone and Pi asks, in the terminal, whether to allow you and make you the **owner**. You can also pick people from **Allowed contacts → Recent chats** or add a number by hand.
+Nobody is allowed to talk to Pi yet. Send a message to the paired number from your phone and Pi asks, in the terminal, whether to allow you and make you the **owner**. You can also pick people from **Allowed chats → Pick from recent chats** or add a number by hand.
 
 You can also use your own number: the "Message yourself" chat works and counts as the owner.
+
+Then send `/help` on WhatsApp: it lists every command and shows your current settings.
 
 ## How it works
 
 - Messages from allowed contacts (or allowed groups) go to Pi as prompts, starting with `[WhatsApp · Name]`.
-- Only runs that started from WhatsApp send replies back. Prompts you type in the terminal stay in the terminal.
-- If Pi is busy, new WhatsApp messages are queued and answered in order.
+- Only runs that started from WhatsApp send replies back. Prompts you type in the terminal stay in the terminal, unless you turn on **Terminal answers**: then their answers are also sent to the owner as text, after the prompt.
+- If Pi is busy, new WhatsApp messages are queued and answered in order. Each answer goes to the chat whose message it answers. If Pi is busy with a prompt you typed in the terminal, that answer stays in the terminal.
+- If Pi can't start on a message (for example, no model is selected or a login expired), the chat is told to check the terminal.
 - Messages sent while WhatsApp was off (or Pi wasn't running) are not acted on later, since they may be out of date. Instead, Pi replies once in that chat: "⏸ 3 messages arrived while Pi's WhatsApp was off and were skipped. Send again if still needed."
 - Only one Pi process at a time can hold the WhatsApp connection. Others show `WA: in use by Pi #<pid>`.
 
@@ -51,11 +56,12 @@ Every row opens a small menu with the choices and a short explanation. Nothing c
 |---|---|---|
 | Connection | WhatsApp (this session) | On · **Off**. Continued sessions get their own value back; new sessions start with the last value you chose. |
 | | Connection | Connect now, show a new QR code (pair again), or log out. |
-| | Allowed chats | People and groups that can talk to Pi. ★ marks the owner. |
+| | Allowed chats | People and groups that can talk to Pi. ★ marks the owner. Pick from recent chats, add a number by hand, rename, remove, or make someone the owner. |
 | | Who can use commands | **Only me** (the owner) · all allowed chats. |
 | | Ask on/off at session start | On · **Off**. Asks whether WhatsApp should be on when a session opens. |
 | Replies | Final answer | Always on. |
 | | Reply type | **Mirror me** (voice note in → voice reply) · text · voice · voice + text. |
+| | Terminal answers | On · **Off**. Also sends the owner Pi's answers to prompts typed in the terminal, as text. |
 | | Progress messages | On · **Off**. What Pi writes while it's still working. |
 | | Live tool log | On · **Off**. One message, updated live, with the latest tool steps. |
 | | Changed files | On · **Off**. The files Pi wrote or edited. |
@@ -75,7 +81,7 @@ Settings are stored in `~/.pi/agent/pi-harness-whatsapp/config.json`.
 
 ## WhatsApp commands
 
-Commands are handled by the extension and never reach the model. Menus are **WhatsApp polls**: tap an option and it's applied right away, or reply with its number. Normal accounts can't send list or button messages; polls work everywhere.
+Commands are handled by the extension and never reach the model. Send `/help` to see them all. Menus are **WhatsApp polls**: tap an option and it's applied right away, or reply with its number. A number counts as a menu answer only until the menu is answered or you send Pi a normal message; after that it goes to Pi. Normal accounts can't send list or button messages; polls work everywhere.
 
 | Command | What it does |
 |---|---|
@@ -88,6 +94,7 @@ Commands are handled by the extension and never reach the model. Menus are **Wha
 | `/think [level]` | Reasoning level, limited to what the model supports |
 | `/voice [text\|voice\|both\|mirror]` · `/lang` · `/speed [x]` | Reply type, reply language, voice reply speed |
 | `/replies` | Switch the reply extras on and off (multi-choice poll) |
+| `/languages` | Show your languages (change them in the terminal) |
 | `/new` | Start a fresh Pi session (the old one stays saved) |
 | `/off` | Turn WhatsApp off. It can be turned back on only from the terminal, or by restarting Pi. |
 | `/quit` | Shut Pi down |
@@ -99,7 +106,7 @@ Commands are handled by the extension and never reach the model. Menus are **Wha
 
 Voice notes are transcribed on your machine and given to Pi tagged with their language, e.g. `[voice note · Turkish] …`. With **Mirror me**, Pi answers in the language you used, and the voice reply uses that language's voice.
 
-Models download automatically the first time they're needed, or right away when you change languages or the speech model. One multilingual Whisper model covers every language. Each spoken language needs one Piper voice (~67 MB download).
+Speech files download the first time they're needed, and the chat is told while it waits. If you change languages, voices or the speech model in `/whatsapp`, Pi asks when you close the panel whether to download the new files now. One multilingual Whisper model covers every language. Each spoken language needs one Piper voice (~67 MB download).
 
 Measured on an Intel i5-13500 (CPU only, 8 threads). For each language, a ~20-second voice note with the same short developer update was spoken by that language's Piper voice. Each model transcribed every note 5 times; the five runs always gave the same transcript. Times are medians. Wrong words are counted against the script, ignoring punctuation and capitals. Real voices and background noise will cause more errors.
 
@@ -162,6 +169,7 @@ Everything lives in `~/.pi/agent/pi-harness-whatsapp/`:
 | `models/` | Speech models |
 | `inbox/` | Files people sent (kept 7 days) |
 | `recents.json` | Recent chat ids and names, for picking contacts (no message text) |
+| `connection.lock` | Which Pi process holds the connection right now |
 | `log/pi-harness-whatsapp.log` | Log: connection events and errors, never message text |
 
 ## Troubleshooting

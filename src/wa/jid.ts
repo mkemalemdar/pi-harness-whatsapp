@@ -21,6 +21,12 @@ export function phoneJid(digits: string): string {
 	return `${digits}@s.whatsapp.net`;
 }
 
+/** Where to send to an allowed contact: the group, the hidden id when that's all we have, or the phone number. */
+export function contactJid(contact: { id: string; lid?: string }): string {
+	if (isGroupJid(contact.id)) return contact.id;
+	return contact.lid === contact.id ? `${contact.id}@lid` : phoneJid(contact.id);
+}
+
 /** Drops the device suffix so ids compare equal: "x:3@lid" → "x@lid". */
 export function normalizeJid(jid: string): string {
 	const at = jid.indexOf("@");

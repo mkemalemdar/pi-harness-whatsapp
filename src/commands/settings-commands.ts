@@ -2,7 +2,7 @@
 
 import { languageLabel } from "../languages.ts";
 import { formatSpeed, REPLY_TOGGLES, replyLanguageLabel, VOICE_MODE_LABELS } from "../panel-model.ts";
-import { clampSpeed, MAX_SPEED, MIN_SPEED, MIRROR, SPEED_PRESETS, VOICE_MODES, type VoiceMode } from "../settings.ts";
+import { clampSpeed, MAX_SPEED, MIN_SPEED, MIRROR, SPEED_PRESETS, type VoiceMode } from "../settings.ts";
 import { notifyTerminal, type Command, type CommandEnv } from "./types.ts";
 
 const VOICE_ALIASES: Record<string, VoiceMode> = {
@@ -45,7 +45,7 @@ export function settingsCommands(): Command[] {
 					kind: "voice",
 					title: `Reply type (now ${VOICE_MODE_LABELS[current]})`,
 					gated: true,
-					options: VOICE_MODES.map((mode) => ({ label: `${mode === current ? "✓ " : ""}${VOICE_MODE_LABELS[mode]}`, value: mode })),
+					options: (["mirror", "off", "voice", "voice+text"] as const).map((mode) => ({ label: `${mode === current ? "✓ " : ""}${VOICE_MODE_LABELS[mode]}`, value: mode })),
 					onPick: async ([mode]) => apply(mode as VoiceMode),
 				});
 				return undefined;
@@ -74,7 +74,7 @@ export function settingsCommands(): Command[] {
 						});
 						const label = replyLanguageLabel(env.settings.get().replyLanguage);
 						notifyTerminal(env, `reply language → ${label}`);
-						return `✅ Reply language → ${label}${code === MIRROR ? "" : ". Add more languages in the terminal: /whatsapp → Languages."}`;
+						return `✅ Reply language → ${label}${code === MIRROR ? "" : ". Add more languages in the terminal: /whatsapp → My languages."}`;
 					},
 				});
 				return undefined;
@@ -148,7 +148,7 @@ export function settingsCommands(): Command[] {
 			gated: false,
 			run: async (_args, _request, env) => {
 				const settings = env.settings.get();
-				return `Languages: ${settings.languages.map(languageLabel).join(", ")} (default ${languageLabel(settings.languages[0]!)}).\nAdd or remove them in the terminal: /whatsapp → Languages.`;
+				return `Languages: ${settings.languages.map(languageLabel).join(", ")} (default ${languageLabel(settings.languages[0]!)}).\nAdd or remove them in the terminal: /whatsapp → My languages.`;
 			},
 		},
 	];

@@ -24,7 +24,7 @@ import {
 	SettingsStore,
 } from "./settings.ts";
 import { type ConnectionState, WhatsAppConnection } from "./wa/connection.ts";
-import { phoneJid } from "./wa/jid.ts";
+import { contactJid, phoneJid } from "./wa/jid.ts";
 import { SendQueue } from "./wa/outbound.ts";
 import { PollMenus } from "./wa/polls.ts";
 import { RecentsStore } from "./wa/recents.ts";
@@ -311,7 +311,7 @@ export class Controller implements PanelHost, CommandEnv {
 		}
 		onStatus("Sending the sample…");
 		const note = await this.voice.speakWith(getLanguage(language)?.sample ?? "Hello!", voiceId);
-		const jid = owner.lid === owner.id ? `${owner.id}@lid` : phoneJid(owner.id);
+		const jid = contactJid(owner);
 		const result = await this.queue.enqueue(jid, { audio: note.audio, ptt: true, seconds: note.seconds, mimetype: "audio/ogg; codecs=opus" });
 		if (!result) throw new Error("WhatsApp didn't accept the sample (see the log).");
 	}

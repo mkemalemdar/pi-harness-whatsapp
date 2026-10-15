@@ -20,6 +20,7 @@ class Harness {
 	idle = true;
 	confirmAnswer = true;
 	connection = {
+		isOpen: () => true,
 		isOwnMessage: (_id: string) => false,
 		selfIds: () => ({ phone: "905550000000" }),
 		markRead: async () => {},
@@ -83,6 +84,12 @@ function incoming(text: string, overrides: { from?: string; at?: number } = {}):
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+/** Pi starts a run and the prompt with this index shows up in the conversation. */
+function start(index: number, { agentStart = true } = {}) {
+	if (agentStart) h.bridge.onAgentStart();
+	h.bridge.onUserMessage({ content: h.prompts[index]!.content });
+}
+
 let h: Harness;
 beforeEach(() => {
 	h = new Harness();
@@ -96,9 +103,9 @@ afterEach(() => h.cleanup());
 describe("Bridge routing", () => {
 	it("forwards an allowed message and sends only the final answer back", async () => {
 		await h.bridge.handleUpsert([incoming("fix the bug")], "notify");
-		expect(h.prompts).toEqual([{ content: "[WhatsApp · Alex] fix the bug", options: undefined }]);
+		expect(h.prompts).toEqual([{ content: "[WhatsApp · Alex] fix the bug", options: { deliverAs: "followUp" } }]);
 
-		h.bridge.onAgentStart();
+		start(0);
 		h.bridge.onAssistantMessage({ content: [{ type: "text", text: "Looking…" }, { type: "toolCall" }] });
 		h.bridge.onToolStart("t1", "edit", { path: "/work/a.ts" });
 		h.bridge.onToolEnd("t1", false);
@@ -119,10 +126,10 @@ describe("Bridge routing", () => {
 
 	it("adds in-between messages, touched files and the summary when toggled on", async () => {
 		h.settings.update((draft) => {
-			draft.replies = { summary: true, interim: true, touchedFiles: true, toolActivity: false };
+			draft.replies = { summary: true, interim: true, touchedFiles: true, toolActivity: false, terminal: false };
 		});
 		await h.bridge.handleUpsert([incoming("go")], "notify");
-		h.bridge.onAgentStart();
+		start(0);
 		h.bridge.onAssistantMessage({ content: [{ type: "text", text: "Step one" }, { type: "toolCall" }] });
 		h.bridge.onToolStart("t1", "write", { path: "/work/notes.md" });
 		h.bridge.onToolEnd("t1", false);
@@ -140,10 +147,10 @@ describe("Bridge routing", () => {
 
 	it("reports a stop and falls back to 'Done' when the model wrote nothing", async () => {
 		await h.bridge.handleUpsert([incoming("a")], "notify");
-		h.bridge.onAgentStart();
+		start(0);
 		await h.bridge.onSettled(true);
 		await h.bridge.handleUpsert([incoming("b")], "notify");
-		h.bridge.onAgentStart();
+		start(1);
 		await h.bridge.onSettled(false);
 		await flush();
 		expect(h.texts()).toEqual(["⏹ Stopped.", "✅ Done."]);
@@ -151,17 +158,78 @@ describe("Bridge routing", () => {
 
 	it("queues messages that arrive while Pi is busy and answers each turn", async () => {
 		await h.bridge.handleUpsert([incoming("first")], "notify");
-		h.bridge.onAgentStart();
+		start(0);
 		h.idle = false;
 		await h.bridge.handleUpsert([incoming("second")], "notify");
 		expect(h.prompts[1]?.options).toEqual({ deliverAs: "followUp" });
 
 		h.bridge.onAssistantMessage({ content: [{ type: "text", text: "answer one" }] });
 		h.bridge.onTurnStart();
+		start(1, { agentStart: false });
 		h.bridge.onAssistantMessage({ content: [{ type: "text", text: "answer two" }] });
 		await h.bridge.onSettled(false);
 		await flush();
 		expect(h.texts()).toEqual(["answer one", "answer two"]);
+	});
+
+	it("keeps the answer to a terminal prompt in the terminal when WhatsApp queues behind it", async () => {
+		// The terminal started a run; a WhatsApp message arrives meanwhile.
+		h.bridge.onAgentStart();
+		h.bridge.onUserMessage({ content: "typed in the terminal" });
+		h.idle = false;
+		await h.bridge.handleUpsert([incoming("from the phone")], "notify");
+		h.bridge.onAssistantMessage({ content: [{ type: "text", text: "terminal answer" }] });
+		h.bridge.onTurnStart();
+		start(0, { agentStart: false });
+		h.bridge.onAssistantMessage({ content: [{ type: "text", text: "phone answer" }] });
+		await h.bridge.onSettled(false);
+		await flush();
+		expect(h.texts()).toEqual(["phone answer"]);
+	});
+
+	it("sends the owner answers to terminal prompts when Terminal answers is on", async () => {
+		h.settings.update((draft) => {
+			draft.replies.terminal = true;
+		});
+		h.bridge.onAgentStart();
+		h.bridge.onUserMessage({ content: "  run the\n tests " });
+		h.bridge.onAssistantMessage({ content: [{ type: "text", text: "All green." }] });
+		await h.bridge.onSettled(false);
+		await flush();
+		expect(h.texts()).toEqual(['💻 Terminal: "run the tests"\n\nAll green.']);
+		expect(h.sent[0]?.jid).toBe(`${OWNER_PHONE}@s.whatsapp.net`);
+	});
+
+	it("sends each queued chat its own answer", async () => {
+		const OTHER = "4477001122";
+		h.settings.update((draft) => {
+			draft.contacts.push({ id: OTHER, name: "Sam" });
+		});
+		await h.bridge.handleUpsert([incoming("from Alex")], "notify");
+		start(0);
+		h.idle = false;
+		await h.bridge.handleUpsert([incoming("from Sam", { from: OTHER })], "notify");
+		h.bridge.onAssistantMessage({ content: [{ type: "text", text: "for Alex" }] });
+		h.bridge.onTurnStart();
+		start(1, { agentStart: false });
+		h.bridge.onAssistantMessage({ content: [{ type: "text", text: "for Sam" }] });
+		await h.bridge.onSettled(false);
+		await flush();
+		expect(h.sent.map((entry) => [entry.jid.split("@")[0], (entry.content as { text: string }).text])).toEqual([
+			[OWNER_PHONE, "for Alex"],
+			[OTHER, "for Sam"],
+		]);
+	});
+
+	it("tells the chat when Pi never starts on its message", async () => {
+		vi.useFakeTimers();
+		try {
+			await h.bridge.handleUpsert([incoming("hello?")], "notify");
+			await vi.advanceTimersByTimeAsync(9000);
+			expect(h.texts()).toEqual(["⚠️ Pi couldn't start on your message. Check the terminal (model or login problem?)."]);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("ignores duplicates, non-live messages and strangers", async () => {

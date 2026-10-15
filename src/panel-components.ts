@@ -5,7 +5,7 @@
  */
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, Input, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { type Component, Input, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 export interface MenuItem {
 	id: string;
@@ -27,6 +27,7 @@ export interface MenuItem {
 }
 
 export interface ListMenuOptions {
+	/** Shown in the top border, e.g. "WhatsApp › Technical › Speech files". */
 	title: string;
 	description?: string;
 	items: MenuItem[];
@@ -38,12 +39,30 @@ export interface ListMenuOptions {
 	hint?: string;
 	initialId?: string;
 	maxVisible?: number;
+	/** Shown instead of the list when every row is greyed out (nothing to do). */
+	emptyText?: () => string;
+}
+
+type Tone = "info" | "ok" | "error";
+
+/** Indent inside the frame, so the menu lines up with Pi's own blocks. */
+const PAD = "  ";
+
+/** Top and bottom lines of a menu, like Pi's own framed blocks. */
+export function frameLines(theme: Theme, title: string, width: number): { top: string; bottom: string } {
+	const label = ` ${title} `;
+	const rest = Math.max(0, width - 2 - label.length);
+	return {
+		top: truncateToWidth(theme.fg("borderMuted", "──") + theme.fg("accent", theme.bold(label)) + theme.fg("borderMuted", "─".repeat(rest)), width),
+		bottom: theme.fg("borderMuted", "─".repeat(Math.max(0, width))),
+	};
 }
 
 export class ListMenu implements Component {
 	private items: MenuItem[];
 	private index = 0;
-	private status: { text: string; tone: "info" | "ok" | "error" } | undefined;
+	/** A result shown next to its row (or under the list), cleared on the next key press. */
+	private status: { text: string; tone: Tone; itemId?: string } | undefined;
 
 	constructor(
 		private readonly theme: Theme,
@@ -61,8 +80,9 @@ export class ListMenu implements Component {
 		this.index = found >= 0 ? found : this.firstEnabled();
 	}
 
-	setStatus(text: string | undefined, tone: "info" | "ok" | "error" = "info"): void {
-		this.status = text ? { text, tone } : undefined;
+	/** Shows a result. With `itemId` it appears next to that row. */
+	setStatus(text: string | undefined, tone: Tone = "info", itemId?: string): void {
+		this.status = text ? { text, tone, ...(itemId ? { itemId } : {}) } : undefined;
 	}
 
 	selected(): MenuItem | undefined {
@@ -72,6 +92,8 @@ export class ListMenu implements Component {
 	invalidate(): void {}
 
 	handleInput(data: string): void {
+		// Results only describe what just happened: any key clears them.
+		this.status = undefined;
 		if (matchesKey(data, "up")) this.move(-1);
 		else if (matchesKey(data, "down")) this.move(1);
 		else if (matchesKey(data, "escape")) this.options.onCancel();
@@ -86,50 +108,73 @@ export class ListMenu implements Component {
 
 	render(width: number): string[] {
 		const t = this.theme;
-		const lines: string[] = [t.fg("accent", t.bold(this.options.title))];
+		const inner = Math.max(10, width - PAD.length);
+		const { top, bottom } = frameLines(t, this.options.title, width);
+		const lines: string[] = [top];
+		const text = (line: string) => lines.push(truncateToWidth(PAD + line, width));
+		const wrapped = (value: string, color: "muted" | "dim") => wrapTextWithAnsi(t.fg(color, value), inner);
+
 		if (this.options.description) {
-			for (const line of wrapTextWithAnsi(t.fg("muted", this.options.description), width)) lines.push(line);
+			// A gap under the title line, so the title and the explanation don't blur together.
+			text("");
+			for (const line of wrapped(this.options.description, "muted")) text(line);
 		}
-		lines.push("");
+		text("");
 
-		const labelWidth = Math.min(
-			Math.max(...this.items.map((item) => (item.indent ?? 0) * 2 + (item.marker ? item.marker.length + 1 : 0) + item.label.length), 10) + 2,
-			Math.floor(width * 0.6),
-		);
-		const maxVisible = this.options.maxVisible ?? 14;
-		const start = Math.max(0, Math.min(this.index - Math.floor(maxVisible / 2), this.items.length - maxVisible));
-		const visible = this.items.slice(start, start + maxVisible);
-		visible.forEach((item, offset) => {
-			const selected = start + offset === this.index;
-			if (item.button) lines.push("");
-			const pointer = selected ? t.fg("accent", "→ ") : "  ";
-			const indent = "  ".repeat(item.indent ?? 0);
-			const text = `${indent}${item.marker ? `${item.marker} ` : ""}${item.label}`;
-			const label = item.heading
-				? t.fg("accent", t.bold(text))
-				: item.disabled
-					? t.fg("dim", text)
-					: selected
-						? t.fg("accent", text)
-						: text;
-			const padded = label + " ".repeat(Math.max(1, labelWidth - text.length));
-			const detail = item.detail ? t.fg("dim", item.detail) : "";
-			lines.push(truncateToWidth(`${pointer}${padded}${detail}`, width));
-		});
-		if (this.items.length > maxVisible) lines.push(t.fg("dim", `  (${this.index + 1}/${this.items.length})`));
+		const statusText = (status: NonNullable<ListMenu["status"]>) =>
+			t.fg(status.tone === "error" ? "error" : status.tone === "ok" ? "success" : "warning", status.text);
+		const actionable = this.items.filter((item) => !item.disabled);
 
-		lines.push("");
-		if (this.status) {
-			const color = this.status.tone === "error" ? "error" : this.status.tone === "ok" ? "success" : "warning";
-			for (const line of wrapTextWithAnsi(t.fg(color, this.status.text), width)) lines.push(line);
+		if (actionable.length === 0 && this.options.emptyText) {
+			// Nothing to do here: one clear line instead of a list of greyed-out rows.
+			if (this.status) text(statusText(this.status));
+			for (const line of wrapTextWithAnsi(t.fg("success", this.options.emptyText()), inner)) text(line);
+		} else {
+			const labelWidth = Math.min(
+				Math.max(...this.items.map((item) => (item.indent ?? 0) * 2 + (item.marker ? item.marker.length + 1 : 0) + item.label.length), 10) + 2,
+				Math.floor(inner * 0.6),
+			);
+			const maxVisible = this.options.maxVisible ?? 14;
+			const start = Math.max(0, Math.min(this.index - Math.floor(maxVisible / 2), this.items.length - maxVisible));
+			let statusShown = false;
+			this.items.slice(start, start + maxVisible).forEach((item, offset) => {
+				const selected = start + offset === this.index;
+				if (item.button) text("");
+				const pointer = selected ? t.fg("accent", "→ ") : "  ";
+				const body = `${"  ".repeat(item.indent ?? 0)}${item.marker ? `${item.marker} ` : ""}${item.label}`;
+				const label = item.heading
+					? t.fg("accent", t.bold(body))
+					: item.disabled
+						? t.fg("dim", body)
+						: selected
+							? t.fg("accent", body)
+							: body;
+				const padded = label + " ".repeat(Math.max(1, labelWidth - body.length));
+				const detail = item.detail ? t.fg("dim", item.detail) : "";
+				// A result takes the place of the row's grey note; if it doesn't fit, it goes under the list.
+				const result = this.status?.itemId === item.id ? statusText(this.status) : "";
+				const fits = !!result && visibleWidth(`${pointer}${padded}${result}`) <= inner;
+				if (fits) statusShown = true;
+				text(`${pointer}${padded}${fits ? result : detail}`);
+			});
+			if (this.items.length > maxVisible) text(t.fg("dim", `(${this.index + 1}/${this.items.length})`));
+			if (this.status && !statusShown) for (const line of wrapTextWithAnsi(statusText(this.status), inner)) text(line);
 		}
-		// Same height for every row's explanation (blank when there is none), so the list doesn't jump.
-		const wrap = (text: string | undefined) => (text ? wrapTextWithAnsi(t.fg("muted", text), width) : []);
-		const reserved = Math.max(1, ...this.items.map((item) => wrap(item.description).length));
-		const description = wrap(this.selected()?.description);
-		lines.push(...description, ...Array<string>(reserved - description.length).fill(""));
-		lines.push(t.fg("dim", this.options.hint ?? "↑↓ move · Enter choose · Esc back"));
-		// A blank line keeps the menu visually apart from Pi's own lines below it.
+
+		text("");
+		// Same height for every row's explanation (blank when there is none, or when the
+		// row is greyed out), so the menu doesn't jump while moving.
+		const explanation = (item: MenuItem | undefined) => (item && !item.disabled && item.description ? wrapped(item.description, "muted") : []);
+		const collapsed = actionable.length === 0 && !!this.options.emptyText;
+		// Menus whose rows have no explanations skip the area entirely.
+		const reserved = collapsed ? 0 : Math.max(0, ...this.items.map((item) => explanation(item).length));
+		const current = reserved > 0 ? explanation(this.selected()) : [];
+		for (const line of [...current, ...Array<string>(reserved - current.length).fill("")]) text(line);
+		// A gap between the row's explanation and the key hint.
+		if (reserved > 0) text("");
+		text(t.fg("dim", this.options.hint ?? "↑↓ move · Enter choose · Esc back"));
+		lines.push(bottom);
+		// A blank line keeps the menu apart from Pi's own lines below it.
 		lines.push("");
 		return lines;
 	}
@@ -179,14 +224,19 @@ export class InputStep implements Component {
 
 	render(width: number): string[] {
 		const t = this.theme;
+		const inner = Math.max(10, width - PAD.length);
+		const { top, bottom } = frameLines(t, this.title, width);
+		const padded = (line: string) => truncateToWidth(PAD + line, width);
 		return [
-			t.fg("accent", t.bold(this.title)),
-			...wrapTextWithAnsi(t.fg("muted", this.description), width),
+			top,
 			"",
-			...this.input.render(width),
+			...wrapTextWithAnsi(t.fg("muted", this.description), inner).map(padded),
 			"",
-			...(this.error ? [t.fg("error", this.error)] : []),
-			t.fg("dim", "Enter save · Esc back"),
+			...this.input.render(inner).map(padded),
+			"",
+			padded(this.error ? t.fg("error", this.error) : ""),
+			padded(t.fg("dim", "Enter save · Esc back")),
+			bottom,
 			"",
 		];
 	}

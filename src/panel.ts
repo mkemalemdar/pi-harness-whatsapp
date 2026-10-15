@@ -93,7 +93,7 @@ export function showPanel(ctx: ExtensionContext, host: PanelHost, focus?: string
 			render();
 		};
 		const stack = new MenuStack(() => finish(undefined), refreshValues);
-		const context: SubmenuContext = { host, theme, stack, render, refreshValues: () => refreshValues() };
+		const base = { host, theme, stack, render, refreshValues: () => refreshValues() };
 
 		const main: ListMenu = new ListMenu(theme, {
 			title: "WhatsApp settings",
@@ -109,7 +109,7 @@ export function showPanel(ctx: ExtensionContext, host: PanelHost, focus?: string
 					finish("contacts");
 					return;
 				}
-				stack.push(openSubmenu(row, context));
+				stack.push(openSubmenu(row, { ...base, path: `WhatsApp › ${row.section ?? ""}` }));
 				render();
 			},
 		});
@@ -142,6 +142,8 @@ export function showPanel(ctx: ExtensionContext, host: PanelHost, focus?: string
 }
 
 interface SubmenuContext {
+	/** Breadcrumb so far, e.g. "WhatsApp › Technical". */
+	path: string;
 	host: PanelHost;
 	theme: Theme;
 	stack: MenuStack;
@@ -166,7 +168,8 @@ function openSubmenu(row: PanelRow, context: SubmenuContext): Component {
 	}
 }
 
-function choiceMenu(row: PanelRow, { host, theme, stack }: SubmenuContext): Component {
+function choiceMenu(row: PanelRow, context: SubmenuContext): Component {
+	const { host, theme, stack } = context;
 	const items: MenuItem[] = (row.choices ?? []).map((choice) => ({
 		id: choice.value,
 		label: choice.label,
@@ -174,7 +177,7 @@ function choiceMenu(row: PanelRow, { host, theme, stack }: SubmenuContext): Comp
 		...(choice.detail ? { detail: choice.detail } : {}),
 	}));
 	return new ListMenu(theme, {
-		title: row.label,
+		title: `${context.path} › ${row.label}`,
 		description: row.description,
 		items,
 		...(row.current ? { initialId: row.current } : {}),
@@ -192,20 +195,21 @@ function choiceMenu(row: PanelRow, { host, theme, stack }: SubmenuContext): Comp
 	});
 }
 
-function languagesMenu(row: PanelRow, { host, theme, stack, render }: SubmenuContext): Component {
+function languagesMenu(row: PanelRow, context: SubmenuContext): Component {
+	const { host, theme, stack, render } = context;
 	const entries = languageChecklist(host.settings.get());
 	const ticked = new Set(entries.filter((entry) => entry.checked).map((entry) => entry.id));
 	const toItems = (): MenuItem[] =>
 		entries.map((entry) => ({ id: entry.id, label: entry.label, marker: ticked.has(entry.id) ? "[x]" : "[ ]" }));
 	const menu: ListMenu = new ListMenu(theme, {
-		title: row.label,
+		title: `${context.path} › ${row.label}`,
 		description: `${row.description} Ticked languages keep their order; new ones are added at the end.`,
 		items: toItems(),
 		hint: "↑↓ move · Space/Enter tick · Esc save and back",
 		onToggle: (item) => {
 			if (ticked.has(item.id)) {
 				if (ticked.size === 1) {
-					menu.setStatus("Keep at least one language.", "error");
+					menu.setStatus("keep at least one language", "error", item.id);
 					render();
 					return;
 				}
@@ -241,7 +245,7 @@ function voicesMenu(row: PanelRow, context: SubmenuContext): Component {
 		}));
 	};
 	const languages: ListMenu = new ListMenu(theme, {
-		title: row.label,
+		title: `${context.path} › ${row.label}`,
 		description: row.description,
 		items: languageItems(),
 		onCancel: () => stack.pop(),
@@ -264,7 +268,7 @@ function voiceList(code: string, context: SubmenuContext, onChanged: () => void)
 	};
 	const current = host.settings.get().voices[code];
 	const list: ListMenu = new ListMenu(theme, {
-		title: `${languageLabel(code)} voices`,
+		title: `${context.path} › Voice per language › ${languageLabel(code)}`,
 		description: "Pick a voice to use it, or get a sample on WhatsApp first.",
 		items: items(),
 		...(current ? { initialId: current } : {}),
@@ -303,7 +307,7 @@ function voiceActions(code: string, voiceId: string, context: SubmenuContext, on
 		{ id: "back", label: "Back", description: "Back to the voice list." },
 	];
 	const menu: ListMenu = new ListMenu(theme, {
-		title: voice.label,
+		title: `${context.path} › ${languageLabel(code)} › ${voice.label}`,
 		description: `${languageLabel(code)} voice.`,
 		items: items(),
 		onCancel: () => stack.pop(),
@@ -317,13 +321,13 @@ function voiceActions(code: string, voiceId: string, context: SubmenuContext, on
 			} else if (item.id === "sample" && !sending) {
 				sending = true;
 				const status = (text: string) => {
-					menu.setStatus(text);
+					menu.setStatus(text, "info", "sample");
 					render();
 				};
 				host
 					.sendVoiceSample(code, voiceId, status)
-					.then(() => menu.setStatus("✓ Sample sent to WhatsApp.", "ok"))
-					.catch((error: unknown) => menu.setStatus(error instanceof Error ? error.message : String(error), "error"))
+					.then(() => menu.setStatus("✓ sent to WhatsApp", "ok", "sample"))
+					.catch((error: unknown) => menu.setStatus(error instanceof Error ? error.message : String(error), "error", "sample"))
 					.finally(() => {
 						sending = false;
 						menu.setItems(items());
@@ -336,11 +340,12 @@ function voiceActions(code: string, voiceId: string, context: SubmenuContext, on
 	return menu;
 }
 
-function speedMenu(row: PanelRow, { host, theme, stack }: SubmenuContext): Component {
+function speedMenu(row: PanelRow, context: SubmenuContext): Component {
+	const { host, theme, stack } = context;
 	const current = formatSpeed(host.settings.get().voiceSpeed);
 	const isPreset = SPEED_CHOICES.some((choice) => choice.value === current);
 	return new ListMenu(theme, {
-		title: row.label,
+		title: `${context.path} › ${row.label}`,
 		description: row.description,
 		items: SPEED_CHOICES.map((choice) => ({
 			id: choice.value,
@@ -361,7 +366,7 @@ function speedMenu(row: PanelRow, { host, theme, stack }: SubmenuContext): Compo
 			stack.push(
 				new InputStep(
 					theme,
-					"Custom voice speed",
+					`${context.path} › Voice reply speed › Custom`,
 					`A number from ${formatSpeed(MIN_SPEED)} to ${formatSpeed(MAX_SPEED)}, e.g. 1.15. 1.0 is normal.`,
 					current,
 					(value) => {
@@ -406,20 +411,24 @@ function speechFilesMenu(row: PanelRow, context: SubmenuContext): Component {
 		];
 	};
 	const menu: ListMenu = new ListMenu(theme, {
-		title: row.label,
+		title: `${context.path} › ${row.label}`,
 		description: row.description,
 		items: items(),
+		emptyText: () => {
+			const info = host.speechInfo();
+			return `✓ All tidy: nothing missing, nothing unused (${info.installed.size} file${info.installed.size === 1 ? "" : "s"} · ${info.diskMB} MB on disk).`;
+		},
 		onCancel: () => stack.pop(),
 		onSelect: (item) => {
 			if (item.id === "download") {
 				host.downloadMissing();
-				menu.setStatus("Downloading in the background. Progress shows in the footer.", "ok");
+				menu.setStatus("✓ downloading in the background (progress in the footer)", "ok", "download");
 				render();
 			} else if (item.id === "delete") {
 				stack.push(
 					deleteChecklist(context, (message) => {
 						menu.setItems(items());
-						if (message) menu.setStatus(message, "ok");
+						if (message) menu.setStatus(message, "ok", "delete");
 					}),
 				);
 			}
@@ -489,7 +498,7 @@ function deleteChecklist(context: SubmenuContext, onDone: (message: string | und
 	};
 
 	const menu: ListMenu = new ListMenu(theme, {
-		title: "Delete unused speech files",
+		title: `${context.path} › Speech files › Delete unused`,
 		description: "Everything starts ticked. Untick what you want to keep, then press the button.",
 		items: items(),
 		hint: "↑↓ move · Space tick/untick · Enter on the button · Esc cancel",
@@ -504,7 +513,7 @@ function deleteChecklist(context: SubmenuContext, onDone: (message: string | und
 			const names = files.filter((file) => ticked.has(file.name)).map((file) => file.name);
 			const megabytes = selectedMB();
 			host.deleteFiles(names);
-			onDone(`Deleted ${names.length} file${names.length === 1 ? "" : "s"} (${megabytes} MB).`);
+			onDone(`✓ deleted ${names.length} file${names.length === 1 ? "" : "s"} (${megabytes} MB)`);
 			stack.pop();
 		},
 		onCancel: () => {
@@ -519,7 +528,7 @@ function connectionMenu(row: PanelRow, context: SubmenuContext): Component {
 	const { host, theme, stack, render } = context;
 	const confirm = (title: string, description: string, yes: string, command: ConnectionCommand): Component =>
 		new ListMenu(theme, {
-			title,
+			title: `${context.path} › Connection › ${title}`,
 			description,
 			items: [
 				{ id: "yes", label: yes },
@@ -556,7 +565,7 @@ function connectionMenu(row: PanelRow, context: SubmenuContext): Component {
 		{ id: "log", label: `Log file: ${host.logFile()}`, disabled: true },
 	];
 	return new ListMenu(theme, {
-		title: row.label,
+		title: `${context.path} › ${row.label}`,
 		description: `Now: ${host.connectionLabel()}`,
 		items,
 		onCancel: () => stack.pop(),

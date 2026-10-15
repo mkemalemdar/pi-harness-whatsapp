@@ -15,7 +15,7 @@ import { formatActivity, formatTouchedFiles, RunReport } from "./run-report.ts";
 import { type Contact, MIRROR, type SettingsStore } from "./settings.ts";
 import type { WhatsAppConnection } from "./wa/connection.ts";
 import { type Access, checkAccess, type InboundMessage, parseMessage, SeenIds, senderIdentity } from "./wa/inbound.ts";
-import { isLidJid, jidUser, phoneJid } from "./wa/jid.ts";
+import { contactJid, isLidJid, jidUser, phoneJid } from "./wa/jid.ts";
 import type { SendQueue } from "./wa/outbound.ts";
 import type { RecentsStore } from "./wa/recents.ts";
 
@@ -27,6 +27,9 @@ const TYPING_REFRESH_MS = 15_000;
 const ACTIVITY_EDIT_INTERVAL_MS = 2_500;
 const ACTIVITY_FALLBACK_INTERVAL_MS = 20_000;
 const ACTIVITY_STEPS_SHOWN = 8;
+/** How long a prompt may take to start before the chat is told it didn't (no model, expired login…). */
+const START_TIMEOUT_MS = 8_000;
+const BUSY_POLL_MS = 500;
 
 type PromptContent = string | Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }>;
 
@@ -53,8 +56,22 @@ export interface MediaHandler {
 	deliverReply(chatJid: string, text: string, context: { voiceIn: boolean; language?: string }): Promise<void>;
 }
 
+/** A WhatsApp prompt handed to Pi that hasn't shown up in the conversation yet. */
+interface Expected {
+	text: string;
+	chatJid: string;
+	voice: boolean;
+	language?: string;
+}
+
 interface Run {
 	chatJid: string;
+	/** False while Pi works on a prompt typed in the terminal: that part stays in the terminal. */
+	active: boolean;
+	/** The chat already got an answer for its latest prompt. */
+	answered: boolean;
+	/** "Terminal answers": the prompt was typed in the terminal (a short preview of it). */
+	fromTerminal?: string;
 	report: RunReport;
 	voiceIn: boolean;
 	language?: string;
@@ -81,11 +98,26 @@ export interface BridgeDeps {
 	media?: MediaHandler;
 }
 
+/** The text of a prompt, as Pi stores it in the user message. */
+function promptText(content: PromptContent | undefined): string {
+	if (typeof content === "string") return content.trim();
+	if (!Array.isArray(content)) return "";
+	return content
+		.filter((part): part is { type: "text"; text: string } => part.type === "text")
+		.map((part) => part.text)
+		.join("\n")
+		.trim();
+}
+
 export class Bridge {
 	private readonly seen = new SeenIds();
 	private run: Run | undefined;
-	/** WhatsApp prompts sent to Pi that have not started a run yet. */
-	private pending: { chatJid: string; voice: boolean; language?: string } | undefined;
+	/** WhatsApp prompts sent to Pi, oldest first, until they appear as user messages. */
+	private expected: Expected[] = [];
+	/** Pi is in an agent run (between agent_start and agent_settled). */
+	private agentActive = false;
+	/** Prompts go to Pi one at a time, in the order they arrived. */
+	private sendChain: Promise<void> = Promise.resolve();
 	private enabledAt = Date.now();
 	private skippedWhileOff = new Map<string, number>();
 	private skippedNoticeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -103,14 +135,14 @@ export class Bridge {
 	/** Called when WhatsApp is turned off or the session ends. */
 	reset(): void {
 		this.finishRun();
-		this.pending = undefined;
+		this.expected = [];
 		if (this.skippedNoticeTimer) clearTimeout(this.skippedNoticeTimer);
 		this.skippedNoticeTimer = undefined;
 	}
 
 	/** The chat Pi is currently answering, if any. */
 	activeChat(): string | undefined {
-		return this.run?.chatJid ?? this.pending?.chatJid;
+		return this.run?.active ? this.run.chatJid : this.expected[0]?.chatJid;
 	}
 
 	// ── Inbound ────────────────────────────────────────────────────────────
@@ -256,8 +288,7 @@ export class Bridge {
 	}
 
 	private async forwardToPi(message: InboundMessage, access: Access): Promise<void> {
-		const ctx = this.deps.getCtx();
-		if (!ctx) return;
+		if (!this.deps.getCtx()) return;
 		void this.deps.connection.presence(message.chatJid, "composing");
 		const header = this.header(message, access);
 		const prepared = this.deps.media
@@ -265,28 +296,54 @@ export class Bridge {
 			: { content: `${header} ${message.text || `(sent ${message.kind})`}`, voice: false };
 		// Message text stays out of the log on purpose.
 		log.info(`→ Pi: ${message.kind} message from ${header}`);
+		const entry: Expected = {
+			text: promptText(prepared.content),
+			chatJid: message.chatJid,
+			voice: prepared.voice,
+			...(prepared.language ? { language: prepared.language } : {}),
+		};
+		// Resolves once the prompt is handed to Pi; waiting for it to start happens in the chain.
+		await new Promise<void>((sent) => {
+			this.sendChain = this.sendChain
+				.then(() => this.submit(entry, prepared.content, sent))
+				.catch((error) => {
+					sent();
+					log.error("failed to hand a message to Pi", error);
+				});
+		});
+	}
 
-		if (ctx.isIdle() && !this.run) {
-			this.pending = {
-				chatJid: message.chatJid,
-				voice: prepared.voice,
-				...(prepared.language ? { language: prepared.language } : {}),
-			};
-			this.deps.pi.sendUserMessage(prepared.content as never);
-		} else {
-			// Pi is busy: queue it; the current run now answers this chat.
-			this.adoptRun(message.chatJid, prepared);
-			this.deps.pi.sendUserMessage(prepared.content as never, { deliverAs: "followUp" });
+	/** Hands one prompt to Pi, then waits until it has started so the next one can be queued behind it. */
+	private async submit(entry: Expected, content: PromptContent, sent: () => void): Promise<void> {
+		// Pi is busy with something that isn't a run (e.g. compacting): prompts are refused then, so wait.
+		const ctx = await this.waitUntil(() => {
+			const current = this.deps.getCtx();
+			return !current || current.isIdle() || this.agentActive;
+		}, 15 * 60_000);
+		if (!ctx) {
+			sent();
+			return;
+		}
+		this.expected.push(entry);
+		// While a run is going, this waits for it as a follow-up; otherwise it starts a run.
+		this.deps.pi.sendUserMessage(content as never, { deliverAs: "followUp" });
+		sent();
+		if (this.agentActive) return;
+		const started = await this.waitUntil(() => this.agentActive || !this.deps.getCtx()?.isIdle() || !this.expected.includes(entry), START_TIMEOUT_MS);
+		if (!started && this.expected.includes(entry)) {
+			this.expected = this.expected.filter((other) => other !== entry);
+			void this.deps.queue.sendText(entry.chatJid, "⚠️ Pi couldn't start on your message. Check the terminal (model or login problem?).");
 		}
 	}
 
-	private adoptRun(chatJid: string, prepared: PreparedPrompt): void {
-		const ctx = this.deps.getCtx();
-		if (!this.run) this.run = this.newRun(chatJid, ctx?.cwd ?? process.cwd());
-		this.run.chatJid = chatJid;
-		this.run.voiceIn = prepared.voice;
-		if (prepared.language) this.run.language = prepared.language;
-		this.startTyping();
+	/** Polls until `ready()` is true (returns the context) or the time runs out (returns undefined). */
+	private async waitUntil(ready: () => boolean, timeoutMs: number): Promise<ExtensionContext | undefined> {
+		const until = Date.now() + timeoutMs;
+		while (!ready()) {
+			if (Date.now() >= until) return undefined;
+			await new Promise((resolve) => setTimeout(resolve, BUSY_POLL_MS).unref?.());
+		}
+		return this.deps.getCtx();
 	}
 
 	// ── Pi events ──────────────────────────────────────────────────────────
@@ -308,14 +365,7 @@ export class Bridge {
 	}
 
 	onAgentStart(): void {
-		const pending = this.pending;
-		this.pending = undefined;
-		if (!pending) return;
-		const ctx = this.deps.getCtx();
-		this.run = this.newRun(pending.chatJid, ctx?.cwd ?? process.cwd());
-		this.run.voiceIn = pending.voice;
-		if (pending.language) this.run.language = pending.language;
-		this.startTyping();
+		this.agentActive = true;
 	}
 
 	onTurnStart(): void {
@@ -324,13 +374,81 @@ export class Bridge {
 			// Another turn follows (a queued message): the previous final answer is complete.
 			const text = run.pendingFinal;
 			run.pendingFinal = undefined;
+			run.answered = true;
 			void this.deliver(run, text);
 		}
 	}
 
+	/**
+	 * A user message entered the conversation. If it's one of ours, the turns that
+	 * follow answer that chat; otherwise it was typed in the terminal and its
+	 * answer stays there.
+	 */
+	onUserMessage(message: { content?: unknown }): void {
+		const text = promptText(message.content as PromptContent);
+		let index = this.expected.findIndex((entry) => entry.text === text);
+		// Another extension may have changed the text on the way; the order still tells.
+		if (index < 0 && text.startsWith("[WhatsApp") && this.expected.length > 0) index = 0;
+		if (index >= 0) {
+			const entry = this.expected[index]!;
+			this.expected.splice(0, index + 1);
+			this.activate(entry.chatJid, entry.voice, entry.language);
+			return;
+		}
+		// Typed in the terminal: sent to the owner only with "Terminal answers" on.
+		const owner = this.terminalAnswersTo();
+		if (owner) {
+			const preview = text.replace(/\s+/g, " ").trim();
+			this.activate(owner, false, undefined, preview.length > 100 ? `${preview.slice(0, 100)}…` : preview || "…");
+			return;
+		}
+		const run = this.run;
+		if (run?.active) {
+			run.active = false;
+			this.stopTyping(run);
+		}
+	}
+
+	/** The owner's chat when "Terminal answers" is on and WhatsApp is connected. */
+	private terminalAnswersTo(): string | undefined {
+		const settings = this.deps.settings.get();
+		if (!settings.replies.terminal || !this.deps.connection.isOpen()) return undefined;
+		const owner = settings.contacts.find((contact) => contact.owner);
+		return owner ? contactJid(owner) : undefined;
+	}
+
+	/** The turns that follow answer `chatJid`. */
+	private activate(chatJid: string, voice: boolean, language: string | undefined, fromTerminal?: string): void {
+		const cwd = this.deps.getCtx()?.cwd ?? process.cwd();
+		const run = this.run;
+		const current = run ?? this.newRun(chatJid, cwd);
+		this.run = current;
+		if (current.chatJid !== chatJid) {
+			// The previous chat's prompt was never answered: tell it why.
+			if (run?.active && !run.answered && !run.fromTerminal) {
+				void this.deps.queue.sendText(run.chatJid, "↪ Pi moved on to another prompt.");
+			}
+			// Another chat's turn: its stats and tool log start fresh.
+			this.stopTyping(current);
+			if (current.activity.timer) clearTimeout(current.activity.timer);
+			current.report = new RunReport(cwd);
+			current.activity = { lastEdit: 0, failed: false };
+		}
+		current.chatJid = chatJid;
+		delete current.lastText;
+		current.active = true;
+		current.answered = false;
+		current.voiceIn = voice;
+		if (language) current.language = language;
+		else delete current.language;
+		if (fromTerminal) current.fromTerminal = fromTerminal;
+		else delete current.fromTerminal;
+		this.startTyping();
+	}
+
 	onAssistantMessage(message: { content?: unknown; stopReason?: string; errorMessage?: string }): void {
 		const run = this.run;
-		if (!run) return;
+		if (!run?.active) return;
 		const parts = Array.isArray(message.content) ? (message.content as Array<{ type: string; text?: string }>) : [];
 		const text = parts
 			.filter((part) => part.type === "text" && part.text)
@@ -353,22 +471,28 @@ export class Bridge {
 
 	onToolStart(toolCallId: string, toolName: string, args: unknown): void {
 		const run = this.run;
-		if (!run) return;
+		if (!run?.active) return;
 		run.report.toolStarted(toolCallId, toolName, args);
 		this.updateActivity(run);
 	}
 
 	onToolEnd(toolCallId: string, isError: boolean): void {
 		const run = this.run;
-		if (!run) return;
+		if (!run?.active) return;
 		run.report.toolEnded(toolCallId, isError);
 		this.updateActivity(run);
 	}
 
 	async onSettled(aborted: boolean): Promise<void> {
+		this.agentActive = false;
 		const run = this.run;
 		if (!run) return;
 		this.finishRun();
+		if (!run.active) {
+			// Pi moved on to a prompt typed in the terminal before answering this chat.
+			if (!run.answered && !run.fromTerminal) await this.deliver(run, "↪ Pi moved on to a prompt typed in the terminal.");
+			return;
+		}
 		const settings = this.deps.settings.get();
 		let text = run.pendingFinal ?? (aborted ? undefined : run.lastText);
 		if (aborted) text = text ? `${text}\n\n⏹ Stopped.` : "⏹ Stopped.";
@@ -384,7 +508,7 @@ export class Bridge {
 	/** Sends images a tool produced (e.g. browser screenshots) to the chat Pi is answering. */
 	async forwardImages(content: ReadonlyArray<{ type: string; data?: string; mimeType?: string }>, toolName: string): Promise<void> {
 		const run = this.run;
-		if (!run) return;
+		if (!run?.active) return;
 		for (const part of content) {
 			if (part.type !== "image" || !part.data) continue;
 			const image = Buffer.from(part.data, "base64");
@@ -398,7 +522,10 @@ export class Bridge {
 
 	private async deliver(run: Run, text: string, extras: string[] = []): Promise<void> {
 		try {
-			if (this.deps.media) {
+			if (run.fromTerminal) {
+				// Always text, with the prompt so the answer makes sense on the phone.
+				await this.deps.queue.sendText(run.chatJid, `💻 Terminal: "${run.fromTerminal}"\n\n${text}`);
+			} else if (this.deps.media) {
 				await this.deps.media.deliverReply(run.chatJid, text, {
 					voiceIn: run.voiceIn,
 					...(run.language ? { language: run.language } : {}),
@@ -440,7 +567,14 @@ export class Bridge {
 	}
 
 	private newRun(chatJid: string, cwd: string): Run {
-		return { chatJid, report: new RunReport(cwd), voiceIn: false, activity: { lastEdit: 0, failed: false } };
+		return {
+			chatJid,
+			active: true,
+			answered: false,
+			report: new RunReport(cwd),
+			voiceIn: false,
+			activity: { lastEdit: 0, failed: false },
+		};
 	}
 
 	private startTyping(): void {
@@ -451,6 +585,13 @@ export class Bridge {
 			if (this.run === run) void this.deps.connection.presence(run.chatJid, "composing");
 		}, TYPING_REFRESH_MS);
 		run.typingTimer.unref?.();
+	}
+
+	private stopTyping(run: Run): void {
+		if (!run.typingTimer) return;
+		clearInterval(run.typingTimer);
+		run.typingTimer = undefined;
+		void this.deps.connection.presence(run.chatJid, "paused");
 	}
 
 	private finishRun(): void {

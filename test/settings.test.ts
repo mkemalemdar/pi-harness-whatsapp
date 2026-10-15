@@ -38,7 +38,7 @@ describe("normalizeSettings", () => {
 		expect(settings.languages).toEqual(["tr", "en"]);
 		expect(settings.voices).toEqual({ tr: "tr_TR-fettah-medium", en: "en_US-amy-medium" });
 		expect(settings.replyLanguage).toBe(MIRROR);
-		expect(settings.replies).toEqual({ summary: true, interim: false, touchedFiles: false, toolActivity: false });
+		expect(settings.replies).toEqual({ summary: true, interim: false, touchedFiles: false, toolActivity: false, terminal: false });
 	});
 
 	it("falls back to English when no language is valid", () => {

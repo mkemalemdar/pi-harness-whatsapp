@@ -63,7 +63,8 @@ export default function piHarnessWhatsApp(pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_start", async () => {
-		if (controller.isEnabled()) bridge.onAgentStart();
+		// Tracked even while off, so the bridge knows whether Pi is in a run.
+		bridge.onAgentStart();
 	});
 
 	pi.on("turn_start", async () => {
@@ -71,7 +72,9 @@ export default function piHarnessWhatsApp(pi: ExtensionAPI) {
 	});
 
 	pi.on("message_end", async (event) => {
-		if (controller.isEnabled() && event.message.role === "assistant") bridge.onAssistantMessage(event.message);
+		if (!controller.isEnabled()) return;
+		if (event.message.role === "user") bridge.onUserMessage(event.message);
+		else if (event.message.role === "assistant") bridge.onAssistantMessage(event.message);
 	});
 
 	pi.on("tool_execution_start", async (event) => {
@@ -90,6 +93,6 @@ export default function piHarnessWhatsApp(pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_settled", async (event) => {
-		if (controller.isEnabled()) await bridge.onSettled(event.aborted);
+		await bridge.onSettled(event.aborted);
 	});
 }

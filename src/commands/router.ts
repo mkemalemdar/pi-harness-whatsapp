@@ -45,7 +45,11 @@ export class CommandRouter implements CommandHandler {
 		if (await this.env.menus.handleNumberReply(message, mayChange)) return true;
 
 		const parsed = parseCommand(message.text);
-		if (!parsed) return false;
+		if (!parsed) {
+			// A normal message for Pi: later bare numbers answer Pi, not an older menu.
+			this.env.menus.endNumberReplies(message.chatJid);
+			return false;
+		}
 		const command = this.find(parsed.name);
 		if (!command) {
 			await this.env.queue.sendText(message.chatJid, `Unknown command /${parsed.name}. Send /help to see what works.`);

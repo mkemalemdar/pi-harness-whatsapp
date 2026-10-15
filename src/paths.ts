@@ -15,7 +15,6 @@ export const paths = {
 	config: () => join(dataDir(), "config.json"),
 	auth: () => join(dataDir(), "auth"),
 	models: () => join(dataDir(), "models"),
-	tmp: () => join(dataDir(), "tmp"),
 	inbox: () => join(dataDir(), "inbox"),
 	logs: () => join(dataDir(), "log"),
 	recents: () => join(dataDir(), "recents.json"),

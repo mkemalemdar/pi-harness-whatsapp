@@ -65,6 +65,8 @@ interface ActivePoll {
 	createdAt: number;
 	/** Last selection per voter (multi-choice diffing). */
 	selections: Map<string, Set<string>>;
+	/** A bare number no longer answers this menu (it was answered, or the chat moved on). */
+	numbersDone?: boolean;
 }
 
 const sha256Hex = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -145,8 +147,18 @@ export class PollMenus {
 			await this.sender.sendText(message.chatJid, `Pick a number from 1 to ${poll.labels.length}.`);
 			return true;
 		}
+		// Once answered, a later bare number is meant for Pi.
+		if (!poll.menu.gated || mayChange) poll.numbersDone = true;
 		await this.apply(poll, [label], [label], [], mayChange);
 		return true;
+	}
+
+	/**
+	 * The chat sent Pi a normal message: from now on a bare number is an answer
+	 * to Pi (e.g. "option 2"), not to an older menu. Tapping the poll still works.
+	 */
+	endNumberReplies(chatJid: string): void {
+		for (const poll of this.polls.values()) if (poll.chatJid === chatJid) poll.numbersDone = true;
 	}
 
 	/** Decrypts a poll vote and applies it. */
@@ -169,6 +181,7 @@ export class PollMenus {
 		if (poll.menu.multi) {
 			if (added.length + removed.length > 0) await this.apply(poll, selected, added, removed, mayChange);
 		} else if (added.length > 0) {
+			poll.numbersDone = true;
 			// Single choice: the newly tapped option (changing a vote applies the new one).
 			await this.apply(poll, added, added, [], mayChange);
 		}
@@ -225,7 +238,7 @@ export class PollMenus {
 	private newestIn(chatJid: string): ActivePoll | undefined {
 		let newest: ActivePoll | undefined;
 		for (const poll of this.polls.values()) {
-			if (poll.chatJid !== chatJid || poll.menu.multi || this.now() - poll.createdAt > NUMBER_REPLY_TTL_MS) continue;
+			if (poll.chatJid !== chatJid || poll.menu.multi || poll.numbersDone || this.now() - poll.createdAt > NUMBER_REPLY_TTL_MS) continue;
 			if (!newest || poll.createdAt >= newest.createdAt) newest = poll;
 		}
 		return newest;

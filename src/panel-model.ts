@@ -47,7 +47,21 @@ const SPEECH_MODEL_DOWNLOAD: Record<SpeechModel, string> = { base: "208 MB", sma
 export const ACCESS_LABELS = { owner: "only me", allowed: "all allowed chats" } as const;
 
 /** The reply extras, in the order they appear in the panel. */
-export const REPLY_TOGGLES: ReadonlyArray<{ key: keyof ReplyToggles; label: string; description: string }> = [
+export const REPLY_TOGGLES: ReadonlyArray<{
+	key: keyof ReplyToggles;
+	label: string;
+	description: string;
+	/** Notes next to "on" / "off" in the submenu (default "sent" / "not sent"). */
+	onDetail?: string;
+	offDetail?: string;
+}> = [
+	{
+		key: "terminal",
+		label: "Terminal answers",
+		description: "Also sends you (the owner) Pi's answers to prompts typed in the terminal, as text.",
+		onDetail: "sent to the owner",
+		offDetail: "stay in the terminal",
+	},
 	{ key: "interim", label: "Progress messages", description: "Sends what Pi writes while it's still working." },
 	{ key: "toolActivity", label: "Live tool log", description: "One message, updated live, showing the latest tool steps." },
 	{ key: "touchedFiles", label: "Changed files", description: "Adds the list of files Pi wrote or edited." },
@@ -73,6 +87,8 @@ export interface PanelRow {
 	choices?: Choice[];
 	/** Value of the current choice (marked with ●). */
 	current?: string;
+	/** Section the row belongs to, e.g. "Technical" (set by buildRows). */
+	section?: string;
 }
 
 /** What the panel needs to know about speech files on disk. */
@@ -213,7 +229,7 @@ export function buildRows(state: PanelState): PanelRow[] {
 			currentValue: onOff(settings.replies[toggle.key]),
 			kind: "choice",
 			current: onOff(settings.replies[toggle.key]),
-			choices: onOffChoices("sent", "not sent"),
+			choices: onOffChoices(toggle.onDetail ?? "sent", toggle.offDetail ?? "not sent"),
 		});
 	}
 	rows.push(
@@ -294,6 +310,11 @@ export function buildRows(state: PanelState): PanelRow[] {
 			kind: "speechFiles",
 		},
 	);
+	let section = "";
+	for (const row of rows) {
+		if (row.kind === "header") section = row.label.charAt(0) + row.label.slice(1).toLowerCase();
+		else row.section = section;
+	}
 	return rows;
 }
 

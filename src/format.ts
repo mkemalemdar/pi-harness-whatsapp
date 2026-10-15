@@ -153,6 +153,26 @@ export function textForSpeech(markdown: string): string {
 		.trim();
 }
 
+/**
+ * Splits text for speech into parts of at most `maxChars`, ending each part at a
+ * sentence (or, failing that, a word) so no voice note stops mid-sentence.
+ */
+export function splitForSpeech(text: string, maxChars: number): string[] {
+	const parts: string[] = [];
+	let rest = text.trim();
+	while (rest.length > maxChars) {
+		const window = rest.slice(0, maxChars + 1);
+		let cut = Math.max(...[". ", "! ", "? ", "… ", "\n"].map((end) => window.lastIndexOf(end)));
+		if (cut < maxChars * 0.5) cut = window.lastIndexOf(" ");
+		if (cut <= 0) cut = maxChars;
+		else cut += 1;
+		parts.push(rest.slice(0, cut).trim());
+		rest = rest.slice(cut).trim();
+	}
+	if (rest) parts.push(rest);
+	return parts;
+}
+
 /** True when a reply is mostly code, so a voice note alone would lose it. */
 export function isCodeHeavy(markdown: string): boolean {
 	const code = splitFences(markdown)

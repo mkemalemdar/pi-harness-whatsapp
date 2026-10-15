@@ -378,7 +378,7 @@ export class Bridge {
 			"- Your final answer is sent to them automatically. Don't use a tool just to reply.",
 			"- Keep answers short and chat-friendly. Summarize long code, and write files to disk instead.",
 			"- Voice notes arrive already transcribed, e.g. `[WhatsApp · Name · voice note · your reply is spoken to Name]`. Transcripts can contain misheard words.",
-			"- When the label says \"your reply is spoken\", your answer becomes a voice note automatically: write plain speech, and don't use whatsapp_send_voice to repeat it. Use that tool only for extra content, such as reading something aloud.",
+			"- When the label says \"your reply is spoken\", your answer becomes voice notes automatically (long answers are split into parts): write plain speech, without code, tables or links.",
 			"- Group labels look like `[WhatsApp group \"Team\" · Name · your reply goes to the group]`: answer the group.",
 			`- ${language}`,
 		].join("\n");

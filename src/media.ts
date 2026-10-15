@@ -6,11 +6,11 @@
 import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import type { MediaHandler, PreparedPrompt } from "./bridge.ts";
-import { isCodeHeavy, textForSpeech } from "./format.ts";
+import { isCodeHeavy, splitForSpeech, textForSpeech } from "./format.ts";
 import { createLogger } from "./log.ts";
 import type { SettingsStore } from "./settings.ts";
 import { chooseSpeechLanguage } from "./voice/language.ts";
-import { MAX_SPOKEN_CHARS, type VoiceService } from "./voice/service.ts";
+import { MAX_SPOKEN_CHARS, MAX_VOICE_PARTS, type VoiceService } from "./voice/service.ts";
 import type { WhatsAppConnection } from "./wa/connection.ts";
 import type { InboundMessage } from "./wa/inbound.ts";
 import type { SendQueue } from "./wa/outbound.ts";
@@ -160,8 +160,9 @@ export class Media implements MediaHandler {
 		}
 
 		const spoken = textForSpeech(text);
-		const tooLong = spoken.length > MAX_SPOKEN_CHARS;
-		// Code or very long answers don't survive as audio alone: send the text too.
+		const parts = splitForSpeech(spoken, MAX_SPOKEN_CHARS);
+		const tooLong = parts.length > MAX_VOICE_PARTS;
+		// Text too only when the voice notes can't carry everything: code, or more than ~10 minutes.
 		const alsoText = mode === "voice+text" || isCodeHeavy(text) || tooLong || !spoken;
 		if (alsoText) await this.deps.queue.sendText(chatJid, text);
 		if (!spoken) return;
@@ -171,15 +172,19 @@ export class Media implements MediaHandler {
 			replyLanguage: settings.replyLanguage,
 			...(context.language ? { incoming: context.language } : {}),
 		});
-		const toSpeak = tooLong ? `${spoken.slice(0, MAX_SPOKEN_CHARS).replace(/\s+\S*$/, "")}… The rest is in the text message.` : spoken;
+		const toSpeak = tooLong ? parts.slice(0, MAX_VOICE_PARTS) : parts;
+		if (tooLong) toSpeak[toSpeak.length - 1] += " … The rest is in the text message.";
 		void this.deps.connection.presence(chatJid, "recording");
 		try {
 			const voice = this.deps.voice.voiceSpec(language);
 			if (voice && !this.deps.voice.models.isInstalled(voice)) {
 				await this.deps.queue.sendText(chatJid, `⏳ Getting the voice ready (one-time download, ~${voice.approxMB} MB)…`);
 			}
-			const note = await this.deps.voice.speak(toSpeak, language);
-			await this.deps.queue.enqueue(chatJid, { audio: note.audio, ptt: true, seconds: note.seconds, mimetype: "audio/ogg; codecs=opus" });
+			// Long answers go out as several voice notes, in order.
+			for (const part of toSpeak) {
+				const note = await this.deps.voice.speak(part, language);
+				await this.deps.queue.enqueue(chatJid, { audio: note.audio, ptt: true, seconds: note.seconds, mimetype: "audio/ogg; codecs=opus" });
+			}
 		} catch (error) {
 			log.error("voice reply failed", error);
 			if (!alsoText) await this.deps.queue.sendText(chatJid, text);

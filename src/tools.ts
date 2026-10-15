@@ -11,13 +11,12 @@ import { Type } from "typebox";
 import { contactLabel } from "./contacts-flow.ts";
 import type { Controller } from "./controller.ts";
 import { createLogger } from "./log.ts";
-import { chooseSpeechLanguage } from "./voice/language.ts";
 import { contactJid } from "./wa/jid.ts";
 
 const log = createLogger("tools");
 const MAX_SEND_BYTES = 60 * 1024 * 1024;
 
-export const TOOL_NAMES = ["whatsapp_send_image", "whatsapp_send_file", "whatsapp_send_voice"] as const;
+export const TOOL_NAMES = ["whatsapp_send_image", "whatsapp_send_file"] as const;
 
 const MIME_BY_EXT: Record<string, string> = {
 	".png": "image/png",
@@ -127,34 +126,6 @@ export function registerTools(pi: ExtensionAPI, controller: Controller): void {
 				if (!result) throw new Error("WhatsApp did not accept the file (see the log).");
 				log.info(`sent file ${basename(full)}`);
 				return { content: [{ type: "text", text: `Sent ${basename(full)} to WhatsApp.` }], details: undefined };
-			},
-		}),
-	);
-
-	pi.registerTool(
-		defineTool({
-			name: "whatsapp_send_voice",
-			label: "WhatsApp: send voice note",
-			description: "Speak a short text as a WhatsApp voice note (in addition to the automatic reply).",
-			promptSnippet: "whatsapp_send_voice(text, to?) - send a spoken voice note to the WhatsApp chat",
-			parameters: Type.Object({
-				text: Type.String({ description: "What to say (plain text, no code)" }),
-				to: recipientParam,
-			}),
-			async execute(_id, params) {
-				ensureConnected(controller);
-				const jid = resolveRecipient(controller, params.to);
-				const settings = controller.settings.get();
-				const language = chooseSpeechLanguage(params.text, { enabled: settings.languages, replyLanguage: settings.replyLanguage });
-				const note = await controller.voice.speak(params.text, language);
-				const result = await controller.queue.enqueue(jid, {
-					audio: note.audio,
-					ptt: true,
-					seconds: note.seconds,
-					mimetype: "audio/ogg; codecs=opus",
-				});
-				if (!result) throw new Error("WhatsApp did not accept the voice note (see the log).");
-				return { content: [{ type: "text", text: `Sent a ${note.seconds}s voice note.` }], details: undefined };
 			},
 		}),
 	);

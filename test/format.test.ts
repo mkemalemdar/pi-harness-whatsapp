@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isCodeHeavy, markdownToWhatsApp, splitMessage, textForSpeech } from "../src/format.ts";
+import { isCodeHeavy, markdownToWhatsApp, splitForSpeech, splitMessage, textForSpeech } from "../src/format.ts";
 
 describe("markdownToWhatsApp", () => {
 	it("converts emphasis", () => {
@@ -77,5 +77,25 @@ describe("speech helpers", () => {
 	it("detects code-heavy replies", () => {
 		expect(isCodeHeavy("short answer")).toBe(false);
 		expect(isCodeHeavy(`Here:\n\`\`\`\n${"x = 1\n".repeat(60)}\`\`\``)).toBe(true);
+	});
+});
+
+describe("splitForSpeech", () => {
+	it("keeps short text whole and splits long text at sentence ends", () => {
+		expect(splitForSpeech("Short answer.", 100)).toEqual(["Short answer."]);
+		const sentence = "This is one sentence of about fifty characters. ";
+		const parts = splitForSpeech(sentence.repeat(10), 120);
+		expect(parts.length).toBe(5);
+		for (const part of parts) {
+			expect(part.length).toBeLessThanOrEqual(120);
+			expect(part.endsWith(".")).toBe(true);
+		}
+		expect(parts.join(" ")).toBe(sentence.repeat(10).trim());
+	});
+
+	it("falls back to a word break when there is no sentence end", () => {
+		const parts = splitForSpeech("word ".repeat(50), 40);
+		for (const part of parts) expect(part.length).toBeLessThanOrEqual(40);
+		expect(parts.join(" ")).toBe("word ".repeat(50).trim());
 	});
 });

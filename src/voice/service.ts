@@ -15,7 +15,10 @@ import { type ModelSpec, ModelStore, SPEECH_MODEL_SPECS, voiceModelSpec } from "
 
 const log = createLogger("voice");
 /** Longer replies are spoken only partly; the full text is sent as well. */
+/** Longest single voice note (about 1.5–2 minutes); longer answers are split into parts. */
 export const MAX_SPOKEN_CHARS = 1500;
+/** At most this many parts (about 10 minutes); anything longer also comes as text. */
+export const MAX_VOICE_PARTS = 6;
 
 export interface Transcript {
 	text: string;

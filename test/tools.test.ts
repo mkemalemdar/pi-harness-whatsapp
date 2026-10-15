@@ -35,7 +35,7 @@ describe("tool visibility", () => {
 		setToolsActive(pi, true);
 		expect(active).toEqual(["read", "bash", ...TOOL_NAMES]);
 		setToolsActive(pi, true);
-		expect(active).toHaveLength(5);
+		expect(active).toHaveLength(2 + TOOL_NAMES.length);
 		setToolsActive(pi, false);
 		expect(active).toEqual(["read", "bash"]);
 	});

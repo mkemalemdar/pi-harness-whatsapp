@@ -22,12 +22,17 @@ export default function piHarnessWhatsApp(pi: ExtensionAPI) {
 	controller.onToolsChanged = (on) => setToolsActive(pi, on);
 
 	pi.registerCommand("whatsapp", {
-		description: "WhatsApp settings: on/off, replies, voice, languages, contacts, connection",
+		description: "WhatsApp settings: on/off, replies, voice, languages, contacts, connection. /whatsapp remove: remove everything before uninstalling",
 		handler: async (args, ctx) => {
 			// Internal: "/new" from WhatsApp dispatches this so Pi gives us a real command context.
 			if (args.trim() === NEW_SESSION_ARG) {
 				await ctx.waitForIdle();
 				await ctx.newSession();
+				return;
+			}
+			// Same as Connection → Remove everything; works without the panel (e.g. for an AI agent over RPC).
+			if (args.trim() === "remove") {
+				await controller.removeEverything(ctx);
 				return;
 			}
 			await controller.openSettings(ctx);

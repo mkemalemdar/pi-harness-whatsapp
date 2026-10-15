@@ -189,6 +189,7 @@ Everything lives in `~/.pi/agent/pi-harness-whatsapp/`:
 | `recents.json` | Recent chat ids and names, for picking contacts (no message text) |
 | `connection.lock` | Which Pi process holds the connection right now |
 | `announce.json` | For a moment around `/new` and `/restart`: which chat to tell that Pi is back |
+| `setup.json` | Only if the installer recorded it: programs installed just for the extension (see [Uninstall](#what-was-installed-for-it)) |
 | `log/pi-harness-whatsapp.log` | Log: connection events and errors, no message text (unless debug logging is on). Rotated at 5 MB into `.log.1`. |
 
 If you set `PI_HARNESS_WHATSAPP_DIR`, everything is in that folder instead. The extension writes nothing anywhere else, apart from Pi's own files (your sessions and its package list).
@@ -197,12 +198,14 @@ If you set `PI_HARNESS_WHATSAPP_DIR`, everything is in that folder instead. The 
 
 Do it in this order, so nothing is left behind.
 
-1. **Clean up from inside Pi.** Close every other Pi window first. Then run `/whatsapp` → **Connection** → **Remove everything (before uninstalling)…** and confirm. Pi:
+1. **Clean up from inside Pi.** Close every other Pi window first. Then run `/whatsapp` → **Connection** → **Remove everything (before uninstalling)…** (or type `/whatsapp remove`) and confirm. Pi:
    - unlinks itself from your phone (WhatsApp → Settings → Linked devices),
    - stops any speech-file download that's still running,
    - deletes `~/.pi/agent/pi-harness-whatsapp/` with everything in it: the WhatsApp login, speech files, settings, allowed chats, recent chats, log and received files,
+   - deletes this extension's copies (and those of the packages it brought along) from npm's download cache, and nothing else there,
+   - asks about each program that was installed just for it, if the installer recorded one (see [What was installed for it](#what-was-installed-for-it)), and removes exactly the packages you say yes to,
    - and writes nothing more until you quit, even if you keep using Pi.
-2. **If Pi runs as a background service, stop and remove it now** (see below); otherwise systemd starts Pi again.
+2. **If Pi runs as a background service, stop and remove it now** (see [Removing the background service](#removing-the-background-service)); otherwise systemd starts Pi again.
 3. **Quit Pi and remove the code:**
    ```bash
    pi uninstall npm:pi-harness-whatsapp
@@ -215,9 +218,15 @@ Do it in this order, so nothing is left behind.
 
 **Check that it's gone:** `pi list` no longer shows it, and `ls ~/.pi/agent/pi-harness-whatsapp` says "No such file or directory".
 
-**Already uninstalled without step 1?** Make sure no Pi is running, then delete the folder yourself: `rm -rf ~/.pi/agent/pi-harness-whatsapp` (if you set `PI_HARNESS_WHATSAPP_DIR` to a folder that holds other things too, delete only the entries listed under [Files](#files)). Then, on your phone, remove Pi under WhatsApp → Settings → Linked devices.
+### Already uninstalled without step 1?
 
-**Removing the background service** (use your unit's name; for a system service, run the same with `sudo` and without `--user`, and the file is in `/etc/systemd/system/`):
+The easiest clean way: install it again (`pi install npm:pi-harness-whatsapp`), start Pi, and do the steps above. "Remove everything" then also cleans up what the first uninstall left.
+
+By hand instead: make sure no Pi is running, and look at `~/.pi/agent/pi-harness-whatsapp/setup.json` first, if it's there, for programs installed for the extension. Then delete the folder: `rm -rf ~/.pi/agent/pi-harness-whatsapp` (if you set `PI_HARNESS_WHATSAPP_DIR` to a folder that holds other things too, delete only the entries listed under [Files](#files)). On your phone, remove Pi under WhatsApp → Settings → Linked devices.
+
+### Removing the background service
+
+Use your unit's name. For a system service, run the same with `sudo` and without `--user`; its file is in `/etc/systemd/system/`.
 ```bash
 systemctl --user disable --now pi-whatsapp.service
 rm ~/.config/systemd/user/pi-whatsapp.service
@@ -225,11 +234,18 @@ systemctl --user daemon-reload
 ```
 If you turned on lingering only for this service, turn it off again with `loginctl disable-linger`. Remove the tmux session it used with `tmux kill-session -t <name>` if it's still running.
 
-**What isn't removed, on purpose:**
+### What was installed for it
+
+The extension itself never installs programs; you or an AI agent install `ffmpeg` (and `tmux` for the background service) when they're missing. Whoever does that can record it in `setup.json` in the data folder, and "Remove everything" then offers to remove it again. [AGENT_INSTALL.md](AGENT_INSTALL.md) has the format, and AI agents installing the extension write it for you.
+
+Removal is careful: with apt, it first does a dry run and keeps everything if removing those packages would also remove anything not on the list (like a program you installed later that needs them). It runs as root or with `sudo` that needs no password; otherwise it shows you the command. With Homebrew it runs `brew uninstall`; with other package managers it shows the command.
+
+### What isn't removed, on purpose
+
 - **Your Pi sessions** (`~/.pi/agent/sessions/`). Chats you had with Pi from WhatsApp are ordinary Pi sessions, and they contain small `pi-harness-whatsapp/session` entries (whether WhatsApp was on). Pi ignores those once the extension is gone; cutting them out would break the sessions. Delete whole sessions in Pi if you don't want them.
-- **Programs installed for it:** `ffmpeg` (and `tmux` if you used the background service). Other programs may use them; if not, remove them with your package manager (e.g. `sudo apt remove ffmpeg tmux`).
-- **npm's download cache** (`~/.npm/_cacache`) keeps a copy of every package npm downloaded, this one included. `npm cache clean --force` empties the whole cache.
-- **The chat on your phone** with Pi's number stays in WhatsApp like any other chat.
+- **Programs nobody recorded** in `setup.json`: if you installed `ffmpeg` or `tmux` yourself just for this, remove them with your package manager (e.g. `sudo apt remove --purge ffmpeg tmux`, then `sudo apt autoremove` for what came with them, after checking its list).
+- **npm's own logs** (`~/.npm/_logs`): npm keeps a log of its last few runs, which can mention the install. They're replaced as npm runs again.
+- **Your package manager's history** (e.g. `/var/log/apt/history.log`, `/var/log/dpkg.log`) notes every install and removal, like it does for every program.
 
 ## Troubleshooting
 

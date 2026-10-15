@@ -22,7 +22,7 @@ Do these yourself before asking anything, so your questions can include the resu
   echo '{"type":"get_commands"}' | pi --mode rpc | grep '"get_commands"'
   ```
   If another package already registers `/whatsapp` (each entry shows its `source`), tell the user it has to be removed first, and ask before removing it. Other WhatsApp extensions that use different command names can stay.
-- **ffmpeg:** run `ffmpeg -version`. Without it, text still works, but voice notes don't. If it's missing, ask before installing it (it usually needs sudo: `sudo apt install ffmpeg`, `brew install ffmpeg`, …).
+- **ffmpeg:** run `ffmpeg -version`. Without it, text still works, but voice notes don't. If it's missing, ask before installing it (it usually needs sudo: `sudo apt install ffmpeg`, `brew install ffmpeg`, …), and **record what you install** (see [Record what you install](#record-what-you-install-outside-pi)).
 - **Voice support on this machine:** voice notes need about **3.5 GB of free RAM** while they're processed (check with `free -m`) and **1.5 GB of disk** for the speech files. They work on Linux (x64 or ARM64), Windows (x64) and macOS on Apple Silicon, but not on Intel Macs or Windows on ARM. If the machine can't do voice, tell the user: text still works, and they should keep Reply type on text.
 
 ## 2. Ask the basics
@@ -108,6 +108,45 @@ If the user can't decide on a voice, keep the default and tell them they can hea
 
 Speech files download by themselves when first needed. You don't have to fetch them.
 
+## Record what you install outside Pi
+
+Anything you install on the computer for this extension (ffmpeg, and tmux for the background service) must be recorded in `setup.json` in the data folder (`~/.pi/agent/pi-harness-whatsapp/setup.json`, or the folder from `PI_HARNESS_WHATSAPP_DIR`). When the user later uninstalls, `/whatsapp` → Remove everything reads it, asks the user about each entry, and removes **exactly those packages** again. A program that was already installed is not recorded.
+
+Record every package the install added, not just the one you asked for: installing ffmpeg with apt pulls in about 100 libraries. List the packages before and after, and record the difference:
+
+```bash
+dpkg-query -W -f='${Package}\n' | sort > /tmp/phw-before.txt
+sudo apt-get install -y ffmpeg
+dpkg-query -W -f='${Package}\n' | sort > /tmp/phw-after.txt
+comm -13 /tmp/phw-before.txt /tmp/phw-after.txt   # these are the "packages"
+rm /tmp/phw-before.txt /tmp/phw-after.txt
+```
+
+Other package managers: list with `brew list --formula -1 | sort` (Homebrew), `rpm -qa --qf '%{NAME}\n' | sort` (dnf, zypper), `pacman -Qq` (pacman) or `apk info | sort` (apk), the same way. For winget, record the package id you installed.
+
+Then write (or add to) `setup.json`, and keep it private (`chmod 600`):
+
+```json
+{
+  "version": 1,
+  "installed": [
+    {
+      "what": "ffmpeg",
+      "manager": "apt",
+      "packages": ["ffmpeg", "libavcodec61", "libavformat61", "…every name from the comm output…"],
+      "at": "2026-10-15",
+      "by": "Claude Code"
+    }
+  ]
+}
+```
+
+- `manager` is one of `apt`, `dnf`, `pacman`, `zypper`, `apk`, `brew`, `winget`. Entries with anything else, or with package names that aren't plain names, are ignored.
+- `what` is the name the user will see ("ffmpeg", "tmux"); `at` and `by` are optional and shown to the user.
+- If the install added nothing (it was already there), don't add an entry.
+
+A background service isn't recorded here (Pi can't remove the service it runs in); tell the user about it, and see Uninstalling, step 3.
+
 ## 6. Hand over to the user
 
 Tell the user:
@@ -126,7 +165,7 @@ Then tell them, briefly:
 - From WhatsApp they can switch the model (`/model`), the reasoning level (`/think`), compact (`/compact`), stop a run (`/stop`), start a new session (`/new`) and change the reply type, language, speed and extras (`/voice`, `/lang`, `/speed`, `/replies`). Menus come as polls: tap an option.
 - Everything else, including on/off, allowed chats and voices, is in `/whatsapp` in the terminal.
 
-Finally, tell the user **everything you set up outside Pi**, so it can be removed later: for example "installed ffmpeg with apt", "created `~/.config/systemd/user/pi-whatsapp.service` and enabled lingering". If you have a memory or notes file for this user, write it there too.
+Finally, tell the user **everything you set up outside Pi**: for example "installed ffmpeg with apt (recorded in setup.json, so Remove everything can take it out again)", "created `~/.config/systemd/user/pi-whatsapp.service` and enabled lingering". If you have a memory or notes file for this user, write it there too.
 
 ## Check it worked
 
@@ -153,10 +192,11 @@ Goal: **nothing left behind** on the user's computer, and Pi unlinked from their
 | What | Where | Removed by |
 |---|---|---|
 | The code | Pi's package folder, plus an entry in `~/.pi/agent/settings.json` | `pi uninstall` |
-| All its data: WhatsApp login (`auth/`), speech files (`models/`, ~1.5 GB), settings (`config.json`), recent chats, received files (`inbox/`), log (`log/`), lock | `~/.pi/agent/pi-harness-whatsapp/` (or `$PI_HARNESS_WHATSAPP_DIR` if set; or `$PI_CODING_AGENT_DIR/pi-harness-whatsapp/` if that is set) | "Remove everything", or deleting the folder |
+| All its data: WhatsApp login (`auth/`), speech files (`models/`, ~1.5 GB), settings (`config.json`), recent chats, received files (`inbox/`), log (`log/`), lock, `setup.json` | `~/.pi/agent/pi-harness-whatsapp/` (or `$PI_HARNESS_WHATSAPP_DIR` if set; or `$PI_CODING_AGENT_DIR/pi-harness-whatsapp/` if that is set) | "Remove everything", or deleting the folder |
 | The linked device on the phone | WhatsApp → Settings → Linked devices | "Remove everything", or the user on their phone |
 | A background service, only if one was set up | a systemd unit (usually `~/.config/systemd/user/*.service` or `/etc/systemd/system/*.service`), maybe lingering and a tmux session | you, step 3 |
-| Programs installed for it, only if they were | `ffmpeg`, `tmux` | only with the user's yes, step 6 |
+| Copies of it and its npm packages | npm's download cache (`~/.npm/_cacache`) | "Remove everything" (only these entries) |
+| Programs installed for it, only if they were | `ffmpeg`, `tmux`; listed in `setup.json` when recorded | "Remove everything" asks about each; or you, step 6, with the user's yes |
 
 The extension writes nowhere else. It never edits shell profiles or creates files outside its data folder.
 
@@ -166,18 +206,31 @@ The extension writes nowhere else. It never edits shell profiles or creates file
    - `pi list`: note the exact source (`npm:pi-harness-whatsapp`, or a `git:` source).
    - The data folder: check `PI_HARNESS_WHATSAPP_DIR` and `PI_CODING_AGENT_DIR` in the environment; otherwise it's `~/.pi/agent/pi-harness-whatsapp/`.
    - A service: `grep -rlE "pi-harness-whatsapp|PI_HARNESS_WHATSAPP|--whatsapp" ~/.config/systemd/user /etc/systemd/system 2>/dev/null`.
-   - Whether ffmpeg or tmux were installed just for this: check your notes, or ask the user.
+   - Programs installed just for this: read `setup.json` in the data folder. If there's none, check your notes or ask the user.
 2. **Tell the user what will be removed and get a yes.** The WhatsApp login is deleted, so using it again means a new QR scan; the speech files would have to download again.
 3. **Stop the service, if there is one** (so it can't start Pi again): `systemctl --user disable --now <unit>` (system unit: `sudo systemctl disable --now <unit>`). Delete its unit file, then run `systemctl --user daemon-reload` (or `sudo systemctl daemon-reload`). Kill its tmux session if it's still there (`tmux ls`, then `tmux kill-session -t <name>`). If lingering was turned on only for this service (your notes, or ask), run `loginctl disable-linger`.
-4. **Clean up the data, preferably from inside Pi.** You can't use the `/whatsapp` panel yourself, so ask the user to:
-   1. close every Pi window but one,
-   2. run `/whatsapp` → **Connection** → **Remove everything (before uninstalling)…** and confirm (it unlinks the phone and deletes the data folder),
-   3. quit Pi.
+4. **Clean up the data from inside Pi.** First ask the user to close every Pi window. Then either the user does it, or you do it through Pi's RPC mode.
 
-   If the user can't, or the extension is already uninstalled: make sure no Pi is running (the user quits them all; `connection.lock` in the data folder shows the pid of a Pi that holds WhatsApp), then delete the data folder: `rm -rf ~/.pi/agent/pi-harness-whatsapp`. **If `PI_HARNESS_WHATSAPP_DIR` points at a folder that also holds other things, delete only these entries in it:** `config.json*`, `recents.json*`, `auth/`, `models/`, `inbox/`, `log/`, `connection.lock`, `announce.json`. Then tell the user to unlink Pi on their phone: WhatsApp → Settings → Linked devices → tap the device that belongs to Pi → Log out.
+   **You, over RPC** (from the user's usual project folder, with no other Pi running): start `pi --mode rpc`, and send this line on its stdin:
+   ```json
+   {"id": "1", "type": "prompt", "message": "/whatsapp remove"}
+   ```
+   Pi then sends `extension_ui_request` records on stdout. For each one with `"method": "confirm"`, show the user its `title` and `message`, and answer with their decision, using the request's `id`:
+   ```json
+   {"type": "extension_ui_response", "id": "<the request's id>", "confirmed": true}
+   ```
+   The first question is "Remove everything?"; then one "Also remove …?" per program in `setup.json`. Records with `"method": "notify"` are progress and the result; the last one starts with `WhatsApp removed.` and lists what was done and any command left for you to run. Show it to the user, then close stdin so Pi quits. Read stdout as a stream and split records on `\n` only (see Pi's `docs/rpc.md`).
+
+   **Or the user**, in Pi:
+   1. run `/whatsapp` → **Connection** → **Remove everything (before uninstalling)…** (or type `/whatsapp remove`) and confirm. It unlinks the phone, deletes the data folder, removes this extension's entries from npm's cache, and asks about each program in `setup.json` (removing exactly the recorded packages, after an apt dry run that keeps everything if anything else would go too),
+   2. read you its summary (the last notice), then quit Pi.
+
+   **Already uninstalled?** The cleanest way is to install it again (`pi install npm:pi-harness-whatsapp`) and do the step above (over RPC, or the user); it then also cleans what the first uninstall left behind.
+
+   **By hand** (only if the user doesn't want that): read `setup.json` first (step 6 needs it). Make sure no Pi is running (the user quits them all; `connection.lock` in the data folder shows the pid of a Pi that holds WhatsApp), then delete the data folder: `rm -rf ~/.pi/agent/pi-harness-whatsapp`. **If `PI_HARNESS_WHATSAPP_DIR` points at a folder that also holds other things, delete only these entries in it:** `config.json*`, `recents.json*`, `auth/`, `models/`, `inbox/`, `log/`, `connection.lock`, `announce.json`, `setup.json`. This way, npm's cache keeps its copies: only "Remove everything" knows which entries are this extension's, and `npm cache clean --force` (only if the user asks) empties the whole cache. Then tell the user to unlink Pi on their phone: WhatsApp → Settings → Linked devices → tap the device that belongs to Pi → Log out.
 5. **Remove the code:** `pi uninstall <source from step 1>`, with Pi not running. npm leaves some empty folders behind (e.g. `@types`); remove only empty ones:
    `find ~/.pi/agent/npm/node_modules ~/.pi/agent/git -mindepth 1 -type d -empty -delete 2>/dev/null`. Don't touch anything else in those folders; other Pi packages live there.
-6. **Programs:** only if ffmpeg or tmux were installed just for this and the user says yes, remove them with the package manager (e.g. `sudo apt remove ffmpeg tmux`). Other programs may need them; never remove them on your own.
+6. **Programs:** "Remove everything" already asked about each `setup.json` entry; its summary says what was removed, and gives the command for anything it couldn't do (for example when `sudo` needs a password). Run those commands only if the user says yes. If you went the manual way, for each entry, with the user's yes: for apt, first run `apt-get -s remove --purge <packages>` and continue only if every line starting with `Remv` or `Purg` names a package from the entry; then `sudo apt-get remove --purge -y <packages>` and delete those packages' downloaded files, `/var/cache/apt/archives/<name>_*.deb`. Never remove a program that wasn't recorded or confirmed by the user; other programs may need it.
 7. **Verify, and show the user the output.** All of these must come back empty (or "No such file or directory"):
    ```bash
    pi list | grep -i whatsapp
@@ -185,14 +238,17 @@ The extension writes nowhere else. It never edits shell profiles or creates file
    find ~/.pi ~/.config/systemd /etc/systemd -iname "*pi-harness-whatsapp*" 2>/dev/null
    find ~/.pi/agent/npm/node_modules ~/.pi/agent/git -mindepth 1 -type d -empty 2>/dev/null
    grep -rlE "pi-harness-whatsapp|PI_HARNESS_WHATSAPP" ~/.config/systemd /etc/systemd ~/.bashrc ~/.profile ~/.zshrc 2>/dev/null
+   npm cache ls 2>/dev/null | grep -i "pi-harness-whatsapp"
    ```
+   For each removed `setup.json` entry, `dpkg-query -W <packages>` (or your package manager's equivalent) must no longer show them as installed.
 8. **Report** what you removed, and what stays on purpose (below).
 
 ### What stays, on purpose; don't delete it
 
 - **Pi's sessions** (`~/.pi/agent/sessions/`). Conversations with Pi from WhatsApp are normal Pi sessions and contain small `pi-harness-whatsapp/session` entries (WhatsApp on/off). Pi ignores them without the extension. **Never edit session files**: entries are linked to each other, and cutting some out breaks the session. If the user wants those conversations gone, they delete whole sessions in Pi.
-- **npm's cache** (`~/.npm/_cacache`) holds a copy of every package npm downloaded. Only if the user asks: `npm cache clean --force` (it empties the whole cache).
-- **The chat on the phone** with Pi's number. That's the user's WhatsApp data, not this computer's.
+- **Other packages in npm's cache.** Only this extension's entries are removed. Emptying the whole cache (`npm cache clean --force`) is only for when the user asks for it.
+- **npm's own logs** (`~/.npm/_logs`, its last few runs) may mention the install; npm replaces them as it runs again.
+- **The package manager's history** (`/var/log/apt/history.log`, `/var/log/dpkg.log`, …) records installs and removals of every program. Never edit system logs.
 
 ## Troubleshooting
 

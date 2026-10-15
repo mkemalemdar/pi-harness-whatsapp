@@ -2,7 +2,9 @@
 
 ## 0.1.1 — 2026-10-15
 
-- **Uninstall without leftovers:** `/whatsapp` → Connection → **Remove everything (before uninstalling)** unlinks Pi from the phone (connecting first if needed), stops running downloads, deletes every file the extension made, and keeps Pi from writing any more until it quits. It refuses while another Pi holds WhatsApp. The README and AGENT_INSTALL describe the full uninstall, the background service and how to check nothing is left.
+- **Uninstall without leftovers:** `/whatsapp` → Connection → **Remove everything (before uninstalling)**, or `/whatsapp remove`, unlinks Pi from the phone (connecting first if needed), stops running downloads, deletes every file the extension made, removes its copies (and its dependencies') from npm's download cache, and keeps Pi from writing any more until it quits. It refuses while another Pi holds WhatsApp. AI agents can run it over Pi's RPC mode.
+- **`setup.json`:** programs installed just for the extension (ffmpeg, tmux) are recorded with the exact packages that came with them; Remove everything asks about each and removes exactly those (apt: after a dry run that keeps everything if anything else would go too; Homebrew: `brew uninstall`; otherwise it shows the command). AGENT_INSTALL tells agents how to record them.
+- The README and AGENT_INSTALL describe the full uninstall, the background service, what stays on purpose and how to check that nothing is left.
 - A Pi that never turned WhatsApp on no longer creates a log or recent-chats file when it quits.
 - README: a section on sending and receiving images and files.
 - The examples in Pi's instructions for spoken replies are in English.

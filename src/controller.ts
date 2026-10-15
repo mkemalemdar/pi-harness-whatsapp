@@ -7,6 +7,10 @@
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import qrcode from "qrcode-terminal";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { cleanNpmCache } from "./cleanup/npm-cache.ts";
+import { describeItem, readSetupRecord, removeItem, type SetupItem } from "./cleanup/setup-record.ts";
 import { Bridge } from "./bridge.ts";
 import { CommandRouter } from "./commands/router.ts";
 import type { CommandEnv } from "./commands/types.ts";
@@ -50,6 +54,11 @@ function qrLines(qr: string): string[] {
 	return output.split("\n").filter((line) => line.length > 0);
 }
 
+/** This extension's own folder (where its package.json is). */
+function packageRoot(): string {
+	return join(dirname(fileURLToPath(import.meta.url)), "..");
+}
+
 export class Controller implements PanelHost, CommandEnv {
 	readonly settings = new SettingsStore(paths.config());
 	readonly recents = new RecentsStore(paths.recents());
@@ -60,6 +69,8 @@ export class Controller implements PanelHost, CommandEnv {
 	readonly commands: CommandRouter;
 	readonly voice: VoiceService;
 	private readonly downloads = new Map<string, { spec: ModelSpec; fraction: number }>();
+	/** What "Remove everything" uses to clean up outside the data folder (replaced in tests). */
+	readonly cleanup = { npmCache: (dir: string) => cleanNpmCache(dir), removeItem: (item: SetupItem) => removeItem(item) };
 	private session: SessionState = { enabled: false, autoCompact: true };
 	private ctx: ExtensionContext | undefined;
 	private lastState: ConnectionState["kind"] = "stopped";
@@ -270,6 +281,11 @@ export class Controller implements PanelHost, CommandEnv {
 	 * this, the extension writes nothing more in this Pi process.
 	 */
 	async removeEverything(ctx: ExtensionContext): Promise<void> {
+		this.ctx = ctx;
+		if (isRemoved()) {
+			ctx.ui.notify(`WhatsApp's files were already removed. ${UNINSTALL_HINT}`, "info");
+			return;
+		}
 		const holder = this.connection.heldElsewhere();
 		if (holder) {
 			ctx.ui.notify(`Another Pi (pid ${holder.pid}) is using WhatsApp. Quit that Pi first, then try again here.`, "error");
@@ -277,12 +293,15 @@ export class Controller implements PanelHost, CommandEnv {
 		}
 		const dir = dataDir();
 		const service = detectService();
+		const programs = readSetupRecord(dir);
 		const yes = await ctx.ui.confirm(
 			"Remove everything?",
 			[
 				"This can't be undone. It:",
 				"• unlinks Pi from your phone (WhatsApp → Linked devices)",
 				`• deletes ${dir}: the WhatsApp login, speech files, settings, allowed chats, recent chats, log and received files`,
+				"• deletes this extension's copies from npm's download cache",
+				...(programs.length > 0 ? ["• then asks about each program that was installed for it"] : []),
 				"",
 				"Close any other Pi windows first, so they can't write files again.",
 				...(service ? [`Pi runs as the systemd service "${service.name}": stop and disable it right after this, or it starts Pi again.`] : []),
@@ -290,6 +309,15 @@ export class Controller implements PanelHost, CommandEnv {
 			].join("\n"),
 		);
 		if (!yes) return;
+		// Programs installed just for the extension (recorded in setup.json): ask about each one.
+		const toRemove: SetupItem[] = [];
+		for (const item of programs) {
+			const remove = await ctx.ui.confirm(
+				`Also remove ${item.what}?`,
+				`It was installed for this extension: ${describeItem(item)}.\nOnly these packages are removed; if something installed later needs them, they're kept.`,
+			);
+			if (remove) toRemove.push(item);
+		}
 		ctx.ui.notify("WhatsApp: unlinking from the phone and deleting files…", "info");
 
 		const unlink = await this.connection.unlinkPhone();
@@ -306,6 +334,21 @@ export class Controller implements PanelHost, CommandEnv {
 		const left = removeDataDir(dir);
 		ctx.ui.setStatus(STATUS_KEY, REMOVED_STATUS);
 
+		let cacheLine: string;
+		try {
+			const removed = await this.cleanup.npmCache(packageRoot());
+			cacheLine = removed > 0 ? `✓ Removed ${removed} cached download${removed === 1 ? "" : "s"} from npm's cache.` : "✓ Nothing of it in npm's cache.";
+		} catch (error) {
+			cacheLine = `⚠ Couldn't clean npm's cache (${error instanceof Error ? error.message : String(error)}).`;
+		}
+		const programLines: string[] = [];
+		for (const item of toRemove) {
+			ctx.ui.notify(`WhatsApp: removing ${item.what}…`, "info");
+			const result = await this.cleanup.removeItem(item);
+			programLines.push(result.ok ? `✓ ${result.message[0]!.toUpperCase()}${result.message.slice(1)}.` : `⚠ ${item.what}: ${result.message}. Run: ${result.command}`);
+		}
+		for (const item of programs.filter((entry) => !toRemove.includes(entry))) programLines.push(`• Kept ${item.what}.`);
+
 		const lines = [
 			unlink === "unlinked"
 				? "✓ Unlinked from your phone."
@@ -313,10 +356,13 @@ export class Controller implements PanelHost, CommandEnv {
 					? "✓ No WhatsApp login was linked."
 					: "⚠ Couldn't reach WhatsApp to unlink: on your phone, remove Pi under WhatsApp → Settings → Linked devices.",
 			left.length === 0 ? `✓ Deleted ${dir}.` : `⚠ Couldn't delete: ${left.join(", ")}. Quit Pi and delete it by hand.`,
+			cacheLine,
+			...programLines,
 			...(service ? [`Stop the service: systemctl ${service.scope.join(" ")} disable --now ${service.name}`.replace(/\s+/g, " ")] : []),
 			`Last step: ${UNINSTALL_HINT}`,
 		];
-		ctx.ui.notify(`WhatsApp removed.\n${lines.join("\n")}`, left.length === 0 && unlink !== "failed" ? "info" : "warning");
+		const warn = left.length > 0 || unlink === "failed" || lines.some((line) => line.startsWith("⚠"));
+		ctx.ui.notify(`WhatsApp removed.\n${lines.join("\n")}`, warn ? "warning" : "info");
 	}
 
 	// ── PanelHost: things the panel's submenus do ──────────────────────────

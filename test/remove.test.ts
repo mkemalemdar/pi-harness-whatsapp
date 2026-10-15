@@ -79,7 +79,7 @@ describe("Remove everything", () => {
 			cwd: "/work",
 			sessionManager: { getBranch: () => [] },
 			ui: {
-				confirm: async () => true,
+				confirm: async (_title: string) => true,
 				notify: (text: string) => notices.push(text),
 				setStatus: (_key: string, text: string | undefined) => statuses.push(text),
 				setWidget: () => {},
@@ -87,8 +87,31 @@ describe("Remove everything", () => {
 		};
 		const pi = { getFlag: () => false, appendEntry: () => {}, getActiveTools: () => [], setActiveTools: () => {} };
 		const controller = new Controller(pi as never);
+		const cleaned: string[] = [];
+		controller.cleanup.npmCache = async (packageDir) => {
+			cleaned.push(packageDir);
+			return 12;
+		};
+		controller.cleanup.removeItem = async (item) => {
+			cleaned.push(item.what);
+			return { ok: true, message: `removed ${item.what} (2 packages)` };
+		};
+		writeFileSync(
+			join(dir, "setup.json"),
+			JSON.stringify({ version: 1, installed: [{ what: "ffmpeg", manager: "apt", packages: ["ffmpeg", "libavcodec61"] }, { what: "tmux", manager: "apt", packages: ["tmux"] }] }),
+		);
+		const asked: string[] = [];
+		ctx.ui.confirm = async (title: string) => {
+			asked.push(title);
+			return title !== "Also remove tmux?";
+		};
 		controller.settings.load();
 		await controller.removeEverything(ctx as never);
+		expect(asked).toEqual(["Remove everything?", "Also remove ffmpeg?", "Also remove tmux?"]);
+		expect(cleaned).toEqual([join(import.meta.dirname, ".."), "ffmpeg"]);
+		expect(notices.at(-1)).toContain("✓ Removed 12 cached downloads from npm's cache.");
+		expect(notices.at(-1)).toContain("✓ Removed ffmpeg (2 packages).");
+		expect(notices.at(-1)).toContain("• Kept tmux.");
 
 		expect(existsSync(dir)).toBe(false);
 		expect(notices.at(-1)).toContain("✓ No WhatsApp login was linked.");

@@ -30,6 +30,7 @@ const OWN_ENTRIES = [
 	/^(auth|models|inbox|log)$/,
 	/^connection\.lock$/,
 	/^announce\.json$/,
+	/^setup\.json$/, // what was installed for the extension (see cleanup/setup-record.ts)
 ];
 
 /**

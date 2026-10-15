@@ -569,7 +569,7 @@ function connectionMenu(row: PanelRow, context: SubmenuContext): Component {
 		{
 			id: "remove",
 			label: "Remove everything (before uninstalling)…",
-			description: "Unlinks Pi from your phone and deletes the login, speech files, settings, log and received files. Asks first.",
+			description: "Unlinks Pi from your phone; deletes the login, speech files, settings, log, received files and npm's cached copies; asks about programs installed for it. Asks first. Same as /whatsapp remove.",
 		},
 		{ id: "log", label: `Log file: ${host.logFile()}`, disabled: true },
 	];

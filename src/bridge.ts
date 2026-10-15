@@ -30,6 +30,7 @@ const ACTIVITY_STEPS_SHOWN = 8;
 /** How long a prompt may take to start before the chat is told it didn't (no model, expired login…). */
 const START_TIMEOUT_MS = 8_000;
 const BUSY_POLL_MS = 500;
+const CUT_OFF_NOTICE = "⚠️ The model hit its output limit before writing an answer. Try again, or raise the model's output limit.";
 
 type PromptContent = string | Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }>;
 
@@ -51,7 +52,8 @@ export interface CommandHandler {
 
 /** Turns media into prompt content and delivers replies (voice, when enabled). */
 export interface MediaHandler {
-	prepare(message: InboundMessage, header: string): Promise<PreparedPrompt>;
+	/** `header(voiceTag)` builds the label in front of the message; voice notes pass e.g. "voice note · Türkçe". */
+	prepare(message: InboundMessage, header: (voiceTag?: string) => string): Promise<PreparedPrompt>;
 	/** Sends the final reply; may turn it into a voice note. */
 	deliverReply(chatJid: string, text: string, context: { voiceIn: boolean; language?: string }): Promise<void>;
 }
@@ -78,6 +80,10 @@ interface Run {
 	/** Final text of a turn, sent when the run settles (or when another turn follows). */
 	pendingFinal?: string;
 	lastText?: string;
+	/** `lastText` is an error from the model, not an answer. */
+	lastIsError?: boolean;
+	/** The model stopped at its output limit before writing any text. */
+	cutOff?: boolean;
 	activity: {
 		key?: import("baileys").WAMessageKey;
 		lastEdit: number;
@@ -277,14 +283,25 @@ export class Bridge {
 		this.skippedNoticeTimer.unref?.();
 	}
 
-	/** Header the model sees in front of each WhatsApp message. */
-	private header(message: InboundMessage, access: Access): string {
+	/**
+	 * The label the model sees in front of each WhatsApp message. It repeats, right
+	 * next to the message, who is talking and where the answer goes, so even small
+	 * models answer the sender directly:
+	 *   [WhatsApp · Alex · your reply goes to Alex]
+	 *   [WhatsApp · Alex · voice note · Türkçe · your reply is spoken to Alex]
+	 */
+	private header(message: InboundMessage, access: Access): (voiceTag?: string) => string {
 		const sender =
 			(!message.isGroup && access.contact?.name) ||
 			message.pushName ||
 			(senderIdentity(message).phone ? `+${senderIdentity(message).phone}` : "WhatsApp user");
-		if (message.isGroup) return `[WhatsApp group "${access.contact?.name ?? "group"}" · ${sender}]`;
-		return `[WhatsApp · ${sender}]`;
+		const from = message.isGroup ? `WhatsApp group "${access.contact?.name ?? "group"}" · ${sender}` : `WhatsApp · ${sender}`;
+		const to = message.isGroup ? "the group" : sender;
+		return (voiceTag) => {
+			const mode = this.deps.settings.get().voiceMode;
+			const spoken = mode === "voice" || mode === "voice+text" || (mode === "mirror" && !!voiceTag);
+			return `[${[from, voiceTag, spoken ? `your reply is spoken to ${to}` : `your reply goes to ${to}`].filter(Boolean).join(" · ")}]`;
+		};
 	}
 
 	private async forwardToPi(message: InboundMessage, access: Access): Promise<void> {
@@ -293,7 +310,7 @@ export class Bridge {
 		const header = this.header(message, access);
 		const prepared = this.deps.media
 			? await this.deps.media.prepare(message, header)
-			: { content: `${header} ${message.text || `(sent ${message.kind})`}`, voice: false };
+			: { content: `${header()} ${message.text || `(sent ${message.kind})`}`, voice: false };
 		// Message text stays out of the log on purpose.
 		log.info(`→ Pi: ${message.kind} message from ${header}`);
 		const entry: Expected = {
@@ -356,11 +373,14 @@ export class Bridge {
 				? "Reply in the language the user wrote or spoke in."
 				: `Always reply in ${languageLabel(settings.replyLanguage)}.`;
 		return [
-			"Some user messages arrive from WhatsApp; they start with a header like `[WhatsApp · Name]`.",
-			"Your final answer to such a message is sent back to WhatsApp automatically — do not use a tool just to reply.",
-			"Keep WhatsApp answers short and chat-friendly; long code is better summarized, with files written to disk.",
-			"Voice notes arrive already transcribed and tagged like `[voice note · Turkish]`.",
-			language,
+			"Some user messages come from WhatsApp. They start with a label like `[WhatsApp · Name · your reply goes to Name]`.",
+			"- Name is talking to you directly from their phone. Answer Name directly, as \"you\" — don't describe their message to someone else or ask what to reply to them.",
+			"- Your final answer is sent to them automatically. Don't use a tool just to reply.",
+			"- Keep answers short and chat-friendly. Summarize long code, and write files to disk instead.",
+			"- Voice notes arrive already transcribed, e.g. `[WhatsApp · Name · voice note · Turkish · your reply is spoken to Name]`.",
+			"- When the label says \"your reply is spoken\", your answer becomes a voice note automatically: write plain speech, and don't use whatsapp_send_voice to repeat it. Use that tool only for extra content, such as reading something aloud.",
+			"- Group labels look like `[WhatsApp group \"Team\" · Name · your reply goes to the group]`: answer the group.",
+			`- ${language}`,
 		].join("\n");
 	}
 
@@ -436,6 +456,8 @@ export class Bridge {
 		}
 		current.chatJid = chatJid;
 		delete current.lastText;
+		delete current.lastIsError;
+		delete current.cutOff;
 		current.active = true;
 		current.answered = false;
 		current.voiceIn = voice;
@@ -459,9 +481,14 @@ export class Bridge {
 
 		if (message.stopReason === "error" && message.errorMessage) {
 			run.lastText = `⚠️ ${message.errorMessage}`;
+			run.lastIsError = true;
 		}
-		if (!text) return;
+		if (!text) {
+			if (message.stopReason === "length") run.cutOff = true;
+			return;
+		}
 		run.lastText = text;
+		run.lastIsError = false;
 		if (hasToolCalls) {
 			if (this.deps.settings.get().replies.interim) void this.deps.queue.sendText(run.chatJid, text);
 			return;
@@ -490,19 +517,23 @@ export class Bridge {
 		this.finishRun();
 		if (!run.active) {
 			// Pi moved on to a prompt typed in the terminal before answering this chat.
-			if (!run.answered && !run.fromTerminal) await this.deliver(run, "↪ Pi moved on to a prompt typed in the terminal.");
+			if (!run.answered && !run.fromTerminal) await this.deliver(run, "↪ Pi moved on to a prompt typed in the terminal.", [], true);
 			return;
 		}
 		const settings = this.deps.settings.get();
-		let text = run.pendingFinal ?? (aborted ? undefined : run.lastText);
-		if (aborted) text = text ? `${text}\n\n⏹ Stopped.` : "⏹ Stopped.";
+		const answer = run.pendingFinal ?? (aborted ? undefined : run.lastText);
+		// Status lines ("Done", "Stopped", errors) are always sent as text, never spoken.
+		const status = !answer || (!run.pendingFinal && !!run.lastIsError);
+		let text = answer;
+		if (aborted) text = answer ? `${answer}\n\n⏹ Stopped.` : "⏹ Stopped.";
+		text ??= run.cutOff ? CUT_OFF_NOTICE : "✅ Done.";
 		const extras: string[] = [];
 		if (settings.replies.touchedFiles) {
 			const files = formatTouchedFiles(run.report.touchedFiles());
 			if (files) extras.push(files);
 		}
 		if (settings.replies.summary) extras.push(run.report.summary());
-		await this.deliver(run, text ?? "✅ Done.", extras);
+		await this.deliver(run, text, extras, status);
 	}
 
 	/** Sends images a tool produced (e.g. browser screenshots) to the chat Pi is answering. */
@@ -520,9 +551,11 @@ export class Bridge {
 
 	// ── Sending ────────────────────────────────────────────────────────────
 
-	private async deliver(run: Run, text: string, extras: string[] = []): Promise<void> {
+	private async deliver(run: Run, text: string, extras: string[] = [], plain = false): Promise<void> {
 		try {
-			if (run.fromTerminal) {
+			if (plain && !run.fromTerminal) {
+				await this.deps.queue.sendText(run.chatJid, text);
+			} else if (run.fromTerminal) {
 				// Always text, with the prompt so the answer makes sense on the phone.
 				await this.deps.queue.sendText(run.chatJid, `💻 Terminal: "${run.fromTerminal}"\n\n${text}`);
 			} else if (this.deps.media) {

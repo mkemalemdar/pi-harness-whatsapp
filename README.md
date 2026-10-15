@@ -41,7 +41,7 @@ Then send `/help` on WhatsApp: it lists every command and shows your current set
 
 ## How it works
 
-- Messages from allowed contacts (or allowed groups) go to Pi as prompts, starting with `[WhatsApp · Name]`.
+- Messages from allowed contacts (or allowed groups) go to Pi as prompts, starting with a label like `[WhatsApp · Name · your reply goes to Name]`. The label and Pi's instructions tell the model that Name is talking to it directly and that its answer is sent back automatically, so even small local models answer you instead of describing your message.
 - Only runs that started from WhatsApp send replies back. Prompts you type in the terminal stay in the terminal, unless you turn on **Terminal answers**: then their answers are also sent to the owner as text, after the prompt.
 - If Pi is busy, new WhatsApp messages are queued and answered in order. Each answer goes to the chat whose message it answers. If Pi is busy with a prompt you typed in the terminal, that answer stays in the terminal.
 - If Pi can't start on a message (for example, no model is selected or a login expired), the chat is told to check the terminal.
@@ -104,7 +104,7 @@ Commands are handled by the extension and never reach the model. Send `/help` to
 
 ## Voice
 
-Voice notes are transcribed on your machine and given to Pi tagged with their language, e.g. `[voice note · Turkish] …`. With **Mirror me**, Pi answers in the language you used, and the voice reply uses that language's voice.
+Voice notes are transcribed on your machine and given to Pi tagged with their language, e.g. `[WhatsApp · Name · voice note · Türkçe · your reply is spoken to Name] …`. When the reply will be spoken, the model is told so, and that it shouldn't send a separate voice note repeating its answer. With **Mirror me**, Pi answers in the language you used, and the voice reply uses that language's voice.
 
 Speech files download the first time they're needed, and the chat is told while it waits. If you change languages, voices or the speech model in `/whatsapp`, Pi asks when you close the panel whether to download the new files now. One multilingual Whisper model covers every language. Each spoken language needs one Piper voice (~67 MB download).
 

@@ -69,13 +69,14 @@ const EXT_BY_MIME: Record<string, string> = {
 export class Media implements MediaHandler {
 	constructor(private readonly deps: MediaDeps) {}
 
-	async prepare(message: InboundMessage, header: string): Promise<PreparedPrompt> {
+	async prepare(message: InboundMessage, makeHeader: (voiceTag?: string) => string): Promise<PreparedPrompt> {
+		const header = makeHeader();
 		const quoted = message.quotedText ? ` (replying to: "${message.quotedText.slice(0, 300)}")` : "";
 		switch (message.kind) {
 			case "image":
 				return this.image(message, header, quoted);
 			case "audio":
-				return this.audio(message, header, quoted);
+				return this.audio(message, makeHeader, quoted);
 			case "document":
 			case "video":
 				return this.file(message, header, quoted);
@@ -106,7 +107,7 @@ export class Media implements MediaHandler {
 		}
 	}
 
-	private async audio(message: InboundMessage, header: string, quoted: string): Promise<PreparedPrompt> {
+	private async audio(message: InboundMessage, makeHeader: (voiceTag?: string) => string, quoted: string): Promise<PreparedPrompt> {
 		void this.deps.connection.presence(message.chatJid, "composing");
 		try {
 			const missing = this.deps.voice.missingModels().filter((spec) => spec.kind === "stt");
@@ -119,14 +120,14 @@ export class Media implements MediaHandler {
 			const audio = await this.deps.connection.download(message.raw);
 			const transcript = await this.deps.voice.transcribe(audio);
 			const language = transcript.language;
-			const tag = language ? `[voice note · ${languageLabel(language).replace(/ \(.*\)$/, "")}]` : "[voice note]";
+			const tag = language ? `voice note · ${languageLabel(language).replace(/ \(.*\)$/, "")}` : "voice note";
 			log.info(`transcribed ${message.seconds ?? "?"}s voice note in ${transcript.ms}ms (${language ?? "?"})`);
 			const text = transcript.text || "(no speech recognized)";
-			return { content: `${header}${quoted} ${tag} ${text}`, voice: true, ...(language ? { language } : {}) };
+			return { content: `${makeHeader(tag)}${quoted} ${text}`, voice: true, ...(language ? { language } : {}) };
 		} catch (error) {
 			log.error("voice note transcription failed", error);
 			const reason = error instanceof Error ? error.message : String(error);
-			return { content: `${header}${quoted} [voice note — could not be transcribed: ${reason}]`, voice: true };
+			return { content: `${makeHeader("voice note")}${quoted} [could not be transcribed: ${reason}]`, voice: true };
 		}
 	}
 

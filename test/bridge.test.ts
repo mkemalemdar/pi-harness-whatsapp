@@ -103,7 +103,7 @@ afterEach(() => h.cleanup());
 describe("Bridge routing", () => {
 	it("forwards an allowed message and sends only the final answer back", async () => {
 		await h.bridge.handleUpsert([incoming("fix the bug")], "notify");
-		expect(h.prompts).toEqual([{ content: "[WhatsApp · Alex] fix the bug", options: { deliverAs: "followUp" } }]);
+		expect(h.prompts).toEqual([{ content: "[WhatsApp · Alex · your reply goes to Alex] fix the bug", options: { deliverAs: "followUp" } }]);
 
 		start(0);
 		h.bridge.onAssistantMessage({ content: [{ type: "text", text: "Looking…" }, { type: "toolCall" }] });
@@ -230,6 +230,43 @@ describe("Bridge routing", () => {
 		} finally {
 			vi.useRealTimers();
 		}
+	});
+
+	it("sends status lines as text and explains a cut-off answer", async () => {
+		const deliveries: Array<{ text: string; voiceIn: boolean }> = [];
+		(h.bridge as unknown as { deps: { media: unknown } }).deps.media = {
+			prepare: async (_message: unknown, header: (voiceTag?: string) => string) => ({ content: `${header("voice note")} hi`, voice: true }),
+			deliverReply: async (_jid: string, text: string, context: { voiceIn: boolean }) => {
+				deliveries.push({ text, voiceIn: context.voiceIn });
+			},
+		};
+		await h.bridge.handleUpsert([incoming("voice")], "notify");
+		start(0);
+		h.bridge.onAssistantMessage({ content: [{ type: "thinking" }], stopReason: "length" });
+		await h.bridge.onSettled(false);
+		await flush();
+		expect(deliveries).toEqual([]);
+		expect(h.texts()).toEqual(["⚠️ The model hit its output limit before writing an answer. Try again, or raise the model's output limit."]);
+	});
+
+	it("labels voice notes with where the spoken reply goes", async () => {
+		let label = "";
+		(h.bridge as unknown as { deps: { media: unknown } }).deps.media = {
+			prepare: async (_message: unknown, header: (voiceTag?: string) => string) => {
+				label = header("voice note · Türkçe");
+				return { content: `${label} merhaba`, voice: true };
+			},
+			deliverReply: async () => {},
+		};
+		await h.bridge.handleUpsert([incoming("voice")], "notify");
+		expect(label).toBe("[WhatsApp · Alex · voice note · Türkçe · your reply is spoken to Alex]");
+		start(0);
+		await h.bridge.onSettled(false);
+		h.settings.update((draft) => {
+			draft.voiceMode = "off";
+		});
+		await h.bridge.handleUpsert([incoming("voice")], "notify");
+		expect(label).toBe("[WhatsApp · Alex · voice note · Türkçe · your reply goes to Alex]");
 	});
 
 	it("ignores duplicates, non-live messages and strangers", async () => {

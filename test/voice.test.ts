@@ -1,10 +1,9 @@
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AnyMessageContent } from "baileys";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Media, safeFileName } from "../src/media.ts";
-import { paths } from "../src/paths.ts";
 import { addLanguage, SettingsStore } from "../src/settings.ts";
 import { decodeToSamples, encodeVoiceNote } from "../src/voice/audio.ts";
 import { SpeechEngine } from "../src/voice/engine.ts";
@@ -138,8 +137,10 @@ describe("Media.deliverReply", () => {
 });
 
 // Uses the real models when they are downloaded (they are after the first voice note).
-const store = new ModelStore(paths.models());
-const installedWhisper = Object.values(SPEECH_MODEL_SPECS).find((spec) => existsSync(paths.models()) && store.isInstalled(spec));
+// Tests run with a temporary data folder; the real speech files are only read here, never changed.
+const realModels = join(process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"), "pi-harness-whatsapp", "models");
+const store = new ModelStore(realModels);
+const installedWhisper = Object.values(SPEECH_MODEL_SPECS).find((spec) => existsSync(realModels) && store.isInstalled(spec));
 const haveModels = !!installedWhisper && store.isInstalled(voiceModelSpec("tr_TR-dfki-medium"));
 
 describe.skipIf(!haveModels)("speech worker (real models)", () => {

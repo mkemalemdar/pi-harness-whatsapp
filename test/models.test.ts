@@ -9,7 +9,7 @@ import { type ModelSpec, ModelStore } from "../src/voice/models.ts";
 
 const DATA = Buffer.from(Array.from({ length: 200_000 }, (_, i) => i % 251));
 const SHA = createHash("sha256").update(DATA).digest("hex");
-const SPEC: ModelSpec = { name: "tiny", kind: "tts", approxMB: 1, hf: { repo: "x/tiny", revision: "abc", include: ["model.bin"] } };
+const SPEC: ModelSpec = { name: "tiny", kind: "tts", approxMB: 1, diskMB: 1, hf: { repo: "x/tiny", revision: "abc", include: ["model.bin"] } };
 
 /** A fake Hugging Face: the first download drops halfway; later ones honour Range. */
 function fakeHub(options: { sha?: string; dropFirst?: boolean; missing?: boolean }) {

@@ -13,26 +13,28 @@ import {
 	applyVoiceChoice,
 	buildRows,
 	CUSTOM,
+	downloadQuestion,
+	formatSize,
 	formatSpeed,
 	languageChecklist,
 	ON,
+	PART_LABELS,
 	type PanelRow,
 	type PanelState,
+	partsDiskMB,
+	removalQuestion,
 	SPEED_CHOICES,
 	type SpeechInfo,
+	VOICE_PARTS,
 	voiceLabel,
+	type VoicePart,
+	voicePlan,
 } from "./panel-model.ts";
-import { groupMarker, InputStep, ListMenu, type MenuItem, MenuStack } from "./panel-components.ts";
-import { clampSpeed, MAX_SPEED, MIN_SPEED, type SettingsStore } from "./settings.ts";
+import { InputStep, ListMenu, type MenuItem, MenuStack } from "./panel-components.ts";
+import { clampSpeed, MAX_SPEED, MIN_SPEED, type SettingsStore, type VoiceParts } from "./settings.ts";
+import { PART_SPECS, RUNTIME_SPEC } from "./voice/models.ts";
 
 export type PanelAction = "contacts" | "qr" | "remove";
-
-export interface SpeechFile {
-	name: string;
-	label: string;
-	kind: "stt" | "tts" | "runtime" | "old";
-	sizeMB: number;
-}
 
 export type ConnectionCommand = "connect" | "repair" | "logout";
 
@@ -46,12 +48,11 @@ export interface PanelHost {
 	logFile(): string;
 	connectionCommand(command: ConnectionCommand): Promise<void>;
 	speechInfo(): SpeechInfo;
-	missingFiles(): SpeechFile[];
-	unusedFiles(): SpeechFile[];
 	isInstalled(name: string): boolean;
 	/** Starts downloading what the settings need, in the background. */
 	downloadMissing(): void;
-	deleteFiles(names: readonly string[]): void;
+	/** Deletes speech files (stops their downloads first). */
+	removeSpeechFiles(names: readonly string[]): Promise<void>;
 	/** Downloads the voice if needed and sends a short sample to the owner's WhatsApp. */
 	sendVoiceSample(language: string, voiceId: string, onStatus: (text: string) => void): Promise<void>;
 }
@@ -63,8 +64,17 @@ export function mainItems(rows: readonly PanelRow[]): MenuItem[] {
 		if (row.kind === "header") {
 			if (items.length > 0) items.push({ id: `space:${row.id}`, label: "", disabled: true });
 			items.push({ id: row.id, label: `[${row.label}]`, disabled: true, heading: true });
+		} else if (row.kind === "info") {
+			items.push({ id: row.id, label: row.label, indent: 1, disabled: true });
 		} else {
-			items.push({ id: row.id, label: row.label, indent: 1, detail: row.currentValue, description: row.description });
+			items.push({
+				id: row.id,
+				label: row.label,
+				indent: 1,
+				detail: row.currentValue,
+				description: row.locked ?? row.description,
+				...(row.locked ? { dimmed: true } : {}),
+			});
 		}
 	}
 	return items;
@@ -78,6 +88,7 @@ export function showPanel(ctx: ExtensionContext, host: PanelHost, focus?: string
 			enabled: host.isEnabled(),
 			connection: host.connectionLabel(),
 			speech: host.speechInfo(),
+			logFile: host.logFile(),
 		});
 		let closed = false;
 		let refresh: ReturnType<typeof setInterval> | undefined;
@@ -105,8 +116,13 @@ export function showPanel(ctx: ExtensionContext, host: PanelHost, focus?: string
 			onSelect: (item) => {
 				const row = buildRows(state()).find((candidate) => candidate.id === item.id);
 				if (!row) return;
-				if (row.kind === "contacts") {
-					finish("contacts");
+				if (row.locked) {
+					main.setStatus("tick “Reply with voice notes” in Voice notes first", "info", row.id);
+					render();
+					return;
+				}
+				if (row.kind === "contacts" || row.kind === "remove") {
+					finish(row.kind);
 					return;
 				}
 				stack.push(openSubmenu(row, { ...base, path: `WhatsApp › ${row.section ?? ""}` }));
@@ -141,7 +157,7 @@ export function showPanel(ctx: ExtensionContext, host: PanelHost, focus?: string
 	});
 }
 
-interface SubmenuContext {
+export interface SubmenuContext {
 	/** Breadcrumb so far, e.g. "WhatsApp › Technical". */
 	path: string;
 	host: PanelHost;
@@ -161,8 +177,8 @@ function openSubmenu(row: PanelRow, context: SubmenuContext): Component {
 			return voicesMenu(row, context);
 		case "speed":
 			return speedMenu(row, context);
-		case "speechFiles":
-			return speechFilesMenu(row, context);
+		case "voiceNotes":
+			return voiceNotesMenu(context);
 		case "connection":
 			return connectionMenu(row, context);
 		default:
@@ -177,6 +193,7 @@ function choiceMenu(row: PanelRow, context: SubmenuContext): Component {
 		label: choice.label,
 		marker: choice.value === row.current ? "●" : " ",
 		...(choice.detail ? { detail: choice.detail } : {}),
+		...(choice.disabled ? { disabled: true } : {}),
 	}));
 	return new ListMenu(theme, {
 		title: `${context.path} › ${row.label}`,
@@ -388,144 +405,130 @@ function speedMenu(row: PanelRow, context: SubmenuContext): Component {
 	});
 }
 
-function speechFilesMenu(row: PanelRow, context: SubmenuContext): Component {
-	const { host, theme, stack, render } = context;
-	const sum = (files: SpeechFile[]) => files.reduce((total, file) => total + file.sizeMB, 0);
+/** The two voice switches. Downloads and deletions happen when you leave, after asking. */
+export function voiceNotesMenu(context: SubmenuContext): Component {
+	const { host, theme, render } = context;
+	const before = { ...host.settings.get().voice };
+	const ticked = { ...before };
+	let deleteAll = false;
 	const items = (): MenuItem[] => {
-		const missing = host.missingFiles();
-		const unused = host.unusedFiles();
+		const speech = host.speechInfo();
+		const part = (id: VoicePart, kind: string, description: string): MenuItem => {
+			const files = PART_SPECS[id].map((spec) => spec.name);
+			const state = files.every((name) => speech.installed.has(name))
+				? " · ✓ on disk"
+				: files.some((name) => speech.downloading.has(name))
+					? " · downloading"
+					: "";
+			return {
+				id,
+				label: PART_LABELS[id],
+				marker: ticked[id] ? "[x]" : "[ ]",
+				detail: `${kind} · ${formatSize(partsDiskMB([id]))}${state}`,
+				description,
+			};
+		};
 		return [
+			part("understand", "speech-to-text", "Pi transcribes the voice notes you send and answers them. Off: a voice note gets “Voice notes are off. Please type your message.”"),
+			part("reply", "text-to-speech", "Pi can answer with voice notes (see Reply type, voices and speed). Off: Pi always answers with text."),
 			{
-				id: "download",
-				label: "Download missing",
-				detail: missing.length ? `${missing.length} · ~${sum(missing)} MB` : "nothing missing",
-				disabled: missing.length === 0,
-				description: missing.length
-					? `Downloads now: ${missing.map((file) => file.label).join(", ")}.`
-					: "Everything your settings need is on disk.",
-			},
-			{
-				id: "delete",
-				label: "Delete unused",
-				detail: unused.length ? `${unused.length} · ${sum(unused)} MB` : "nothing unused",
-				disabled: unused.length === 0,
-				description: "Shows the files your settings don't use, all ticked. Untick what you want to keep.",
+				id: "deleteAll",
+				label: "[ Delete all speech files ]",
+				button: true,
+				description: "Unticks both. The files are deleted when you leave this menu, after you confirm.",
 			},
 		];
 	};
 	const menu: ListMenu = new ListMenu(theme, {
-		title: `${context.path} › ${row.label}`,
-		description: row.description,
+		title: `${context.path} › Voice notes`,
+		description: `Optional. Both parts share a ${formatSize(RUNTIME_SPEC.diskMB)} engine, so together they take ${formatSize(partsDiskMB(VOICE_PARTS))}. Files are downloaded or deleted when you leave this menu.`,
 		items: items(),
-		emptyText: () => {
-			const info = host.speechInfo();
-			return `✓ All tidy: nothing missing, nothing unused (${info.installed.size} file${info.installed.size === 1 ? "" : "s"} · ${info.diskMB} MB on disk).`;
-		},
-		onCancel: () => stack.pop(),
+		hint: "↑↓ move · Space/Enter tick · Esc save and back",
 		onSelect: (item) => {
-			if (item.id === "download") {
-				host.downloadMissing();
-				menu.setStatus("✓ downloading in the background (progress in the footer)", "ok", "download");
-				render();
-			} else if (item.id === "delete") {
-				stack.push(
-					deleteChecklist(context, (message) => {
-						menu.setItems(items());
-						if (message) menu.setStatus(message, "ok", "delete");
-					}),
-				);
+			if (item.id === "deleteAll") {
+				ticked.understand = false;
+				ticked.reply = false;
+				deleteAll = true;
+				menu.setStatus("both unticked: deleted when you leave", "info", "deleteAll");
+			} else {
+				const id = item.id as VoicePart;
+				ticked[id] = !ticked[id];
 			}
+			menu.setItems(items());
+			render();
 		},
+		onCancel: () => leaveVoiceNotes(context, before, ticked, deleteAll),
 	});
 	return menu;
 }
 
-function deleteChecklist(context: SubmenuContext, onDone: (message: string | undefined) => void): Component {
-	const { host, theme, stack, render } = context;
-	const files = host.unusedFiles();
-	const ticked = new Set(files.map((file) => file.name));
-	const groups = [
-		{ id: "group:old", label: "From an older version (Piper voices, old speech models)", kind: "old" as const },
-		{ id: "group:tts", label: "Voices", kind: "tts" as const },
-		{ id: "group:stt", label: "Speech-to-text", kind: "stt" as const },
-	].filter((group) => files.some((file) => file.kind === group.kind));
-	const selectedMB = () => files.filter((file) => ticked.has(file.name)).reduce((total, file) => total + file.sizeMB, 0);
-
-	const items = (): MenuItem[] => {
-		const list: MenuItem[] = [];
-		for (const group of groups) {
-			const members = files.filter((file) => file.kind === group.kind);
-			const count = members.filter((file) => ticked.has(file.name)).length;
-			list.push({
-				id: group.id,
-				label: group.label,
-				marker: groupMarker(count, members.length),
-				detail: `${members.reduce((total, file) => total + file.sizeMB, 0)} MB`,
-				description: "Untick to keep everything in this group.",
-			});
-			for (const file of members) {
-				list.push({
-					id: file.name,
-					label: file.label,
-					marker: ticked.has(file.name) ? "[x]" : "[ ]",
-					indent: 1,
-					detail: `${file.sizeMB} MB`,
-				});
-			}
-		}
-		list.push({
-			id: "delete",
-			label: `[ Delete selected (${selectedMB()} MB) ]`,
-			button: true,
-			disabled: ticked.size === 0,
-			description: "Deletes the ticked files now. They download again if a setting ever needs them.",
+/** Leaving the Voice notes menu: confirm deletions, save, then offer downloads. */
+function leaveVoiceNotes(context: SubmenuContext, before: VoiceParts, after: VoiceParts, deleteAll: boolean): void {
+	const { host, stack, render } = context;
+	const plan = voicePlan(before, after, deleteAll, host.speechInfo());
+	// Saves the switches, then asks about downloading what newly switched-on parts need.
+	const save = (final: VoiceParts) => {
+		host.settings.update((draft) => {
+			draft.voice = { ...final };
 		});
-		return list;
+		context.refreshValues();
+		const downloads = voicePlan(before, final, false, host.speechInfo()).download;
+		if (downloads.files.length === 0) return;
+		stack.push(
+			question(context, "Download speech files?", downloadQuestion({ ...plan, download: downloads }), ["Now (recommended)", "When first needed"], (choice) => {
+				if (choice === 0) host.downloadMissing();
+			}),
+		);
 	};
+	stack.pop();
+	if (plan.remove.files.length === 0) {
+		save(after);
+		return;
+	}
+	stack.push(
+		question(
+			context,
+			"Remove speech files?",
+			removalQuestion(plan),
+			["Yes", "No"],
+			(choice) => {
+				if (choice === 0) {
+					save(after);
+					void host.removeSpeechFiles(plan.remove.files).finally(() => {
+						context.refreshValues();
+						render();
+					});
+				} else {
+					// No: the parts switched off are switched on again; nothing is deleted.
+					save({ understand: after.understand || before.understand, reply: after.reply || before.reply });
+				}
+			},
+			1,
+		),
+	);
+}
 
-	const toggle = (id: string) => {
-		const group = groups.find((entry) => entry.id === id);
-		if (group) {
-			const members = files.filter((file) => file.kind === group.kind);
-			const allTicked = members.every((file) => ticked.has(file.name));
-			for (const file of members) {
-				if (allTicked) ticked.delete(file.name);
-				else ticked.add(file.name);
-			}
-		} else if (ticked.has(id)) {
-			ticked.delete(id);
-		} else {
-			ticked.add(id);
-		}
-		menu.setItems(items());
-		render();
+/** A small question screen; Esc picks `escChoice`. Calls `onAnswer` after closing itself. */
+function question(
+	context: SubmenuContext,
+	title: string,
+	text: string,
+	choices: readonly string[],
+	onAnswer: (choice: number) => void,
+	escChoice = choices.length - 1,
+): Component {
+	const { theme, stack } = context;
+	const answer = (choice: number) => {
+		stack.pop();
+		onAnswer(choice);
 	};
-
-	const menu: ListMenu = new ListMenu(theme, {
-		title: `${context.path} › Speech files › Delete unused`,
-		description: "Everything starts ticked. Untick what you want to keep, then press the button.",
-		items: items(),
-		hint: "↑↓ move · Space tick/untick · Enter on the button · Esc cancel",
-		onToggle: (item) => {
-			if (item.id !== "delete") toggle(item.id);
-		},
-		onSelect: (item) => {
-			if (item.id !== "delete") {
-				toggle(item.id);
-				return;
-			}
-			const names = files.filter((file) => ticked.has(file.name)).map((file) => file.name);
-			const megabytes = selectedMB();
-			host.deleteFiles(names);
-			onDone(`✓ deleted ${names.length} file${names.length === 1 ? "" : "s"} (${megabytes} MB)`);
-			stack.pop();
-		},
-		onCancel: () => {
-			onDone(undefined);
-			stack.pop();
-		},
+	return new ListMenu(theme, {
+		title: `${context.path} › ${title}`,
+		description: text,
+		items: choices.map((label, index) => ({ id: String(index), label })),
+		onCancel: () => answer(escChoice),
+		onSelect: (item) => answer(Number(item.id)),
 	});
-	return menu;
 }
 
 function connectionMenu(row: PanelRow, context: SubmenuContext): Component {
@@ -566,12 +569,6 @@ function connectionMenu(row: PanelRow, context: SubmenuContext): Component {
 			label: "Log out (unlink this device)",
 			description: "Removes Pi from the phone's Linked devices. You'll need to scan a QR code again.",
 		},
-		{
-			id: "remove",
-			label: "Remove everything (before uninstalling)…",
-			description: "Unlinks Pi from your phone; deletes the login, speech files, settings, log, received files and npm's cached copies; asks about programs installed for it. Asks first. Same as /whatsapp remove.",
-		},
-		{ id: "log", label: `Log file: ${host.logFile()}`, disabled: true },
 	];
 	return new ListMenu(theme, {
 		title: `${context.path} › ${row.label}`,
@@ -579,9 +576,7 @@ function connectionMenu(row: PanelRow, context: SubmenuContext): Component {
 		items,
 		onCancel: () => stack.pop(),
 		onSelect: (item) => {
-			if (item.id === "remove") {
-				context.finish("remove");
-			} else if (item.id === "connect") {
+			if (item.id === "connect") {
 				void host.connectionCommand("connect").finally(render);
 				stack.home();
 			} else if (item.id === "repair") {

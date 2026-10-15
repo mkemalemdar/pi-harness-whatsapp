@@ -266,6 +266,9 @@ describe("CommandRouter", () => {
 		enabled = true;
 		const settings = new SettingsStore(join(dir, "config.json"));
 		settings.load();
+		settings.update((draft) => {
+			draft.voice = { understand: true, reply: true };
+		});
 		const queue = new SendQueue(
 			{
 				isOpen: () => true,
@@ -357,6 +360,25 @@ describe("CommandRouter", () => {
 		expect(autoCompact).toBe(false);
 		await router.handle(msg("/think max"), owner);
 		expect(sent.at(-1)).toBe("✅ Thinking → high (closest this model supports)");
+	});
+
+	it("won't change voice from WhatsApp while voice replies are off", async () => {
+		const router = new CommandRouter(env);
+		env.settings.update((draft) => {
+			draft.voice = { understand: false, reply: false };
+		});
+		await router.handle(msg("/voice voice"), owner);
+		expect(sent.at(-1)).toMatch(/^Voice replies are off\. Turn them on in the terminal/);
+		await router.handle(msg("/speed 1.2"), owner);
+		expect(sent.at(-1)).toMatch(/^Voice replies are off/);
+		expect(env.settings.get()).toMatchObject({ voiceMode: "mirror", voiceSpeed: 1 });
+		env.settings.update((draft) => {
+			draft.voice = { understand: false, reply: true };
+		});
+		await router.handle(msg("/voice mirror"), owner);
+		expect(sent.at(-1)).toMatch(/needs Pi to understand voice notes/);
+		await router.handle(msg("/help"), owner);
+		expect(sent.at(-1)).toContain("Voice notes: understand ✗ · reply ✓");
 	});
 
 	it("replies to unknown commands and refuses /restart outside the loop", async () => {

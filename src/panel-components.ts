@@ -22,6 +22,8 @@ export interface MenuItem {
 	button?: boolean;
 	/** Can't be selected (section labels, info lines). */
 	disabled?: boolean;
+	/** Shown greyed out but still selectable, so its description can say why. */
+	dimmed?: boolean;
 	/** A section title: shown bold in the accent colour. */
 	heading?: boolean;
 }
@@ -144,7 +146,7 @@ export class ListMenu implements Component {
 				const body = `${"  ".repeat(item.indent ?? 0)}${item.marker ? `${item.marker} ` : ""}${item.label}`;
 				const label = item.heading
 					? t.fg("accent", t.bold(body))
-					: item.disabled
+					: item.disabled || item.dimmed
 						? t.fg("dim", body)
 						: selected
 							? t.fg("accent", body)

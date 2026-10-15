@@ -12,7 +12,7 @@ import { contactLabel } from "./contacts-flow.ts";
 import { languageLabel } from "./languages.ts";
 import { createLogger } from "./log.ts";
 import { formatActivity, formatTouchedFiles, RunReport } from "./run-report.ts";
-import { type Contact, MIRROR, type SettingsStore } from "./settings.ts";
+import { type Contact, MIRROR, replyMode, type SettingsStore } from "./settings.ts";
 import type { WhatsAppConnection } from "./wa/connection.ts";
 import { type Access, addressedToSelf, checkAccess, type InboundMessage, parseMessage, SeenIds, senderIdentity } from "./wa/inbound.ts";
 import { contactJid, isLidJid, jidUser, phoneJid } from "./wa/jid.ts";
@@ -33,6 +33,8 @@ const BUSY_POLL_MS = 500;
 /** Group messages not meant for Pi that are kept as context for when it is addressed. */
 const GROUP_CONTEXT_MESSAGES = 20;
 const CUT_OFF_NOTICE = "⚠️ The model hit its output limit before writing an answer. Try again, or raise the model's output limit.";
+/** The answer to a voice note while "Understand voice notes" is off. */
+export const VOICE_OFF_NOTICE = "🎤 Voice notes are off. Please type your message.";
 
 type PromptContent = string | Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }>;
 
@@ -214,9 +216,18 @@ export class Bridge {
 			return;
 		}
 
+		// Voice notes while "Understand voice notes" is off: nothing reaches the model and nothing downloads.
+		const voiceOff = message.kind === "audio" && !this.deps.settings.get().voice.understand;
 		if (message.isGroup) {
 			// WhatsApp writes a mention as "@<number>"; the model reads "@Pi" better.
 			message.text = this.namePi(message.text);
+			if (voiceOff) {
+				// In a group, only a voice note that replies to Pi gets the answer; others are just context.
+				const { repliedTo } = addressedToSelf(message, this.deps.connection.selfIds(), (id) => this.deps.connection.isOwnMessage(id));
+				if (repliedTo) await this.deps.queue.sendText(message.chatJid, VOICE_OFF_NOTICE);
+				else this.rememberGroupMessage(message);
+				return;
+			}
 			if (!this.isForPi(message)) {
 				// Not meant for Pi: keep it as context for the next time Pi is addressed.
 				this.rememberGroupMessage(message);
@@ -228,6 +239,13 @@ export class Bridge {
 		// Commands, and number replies to menus, never reach the model.
 		if (message.kind === "text" && this.deps.commands && (await this.deps.commands.handle(message, access))) return;
 		await this.forwardToPi(message, access);
+	}
+
+	/** Voice notes while "Understand voice notes" is off get a short answer instead of reaching Pi. */
+	private async answeredVoiceOff(message: InboundMessage): Promise<boolean> {
+		if (message.kind !== "audio" || this.deps.settings.get().voice.understand) return false;
+		await this.deps.queue.sendText(message.chatJid, VOICE_OFF_NOTICE);
+		return true;
 	}
 
 	/** In a group: does this message ask Pi something (per "In groups, answer")? Commands and menu answers always do. */
@@ -391,7 +409,7 @@ export class Bridge {
 		const from = message.isGroup ? `WhatsApp group "${access.contact?.name ?? "group"}" · ${sender}` : `WhatsApp · ${sender}`;
 		const to = message.isGroup ? "the group" : sender;
 		return (voiceTag) => {
-			const mode = this.deps.settings.get().voiceMode;
+			const mode = replyMode(this.deps.settings.get());
 			const spoken = mode === "voice" || mode === "voice+text" || (mode === "mirror" && !!voiceTag);
 			return `[${[from, voiceTag, spoken ? `your reply is spoken to ${to}` : `your reply goes to ${to}`].filter(Boolean).join(" · ")}]`;
 		};
@@ -399,6 +417,7 @@ export class Bridge {
 
 	private async forwardToPi(message: InboundMessage, access: Access): Promise<void> {
 		if (!this.deps.getCtx()) return;
+		if (await this.answeredVoiceOff(message)) return;
 		void this.deps.connection.presence(message.chatJid, "composing");
 		const header = this.header(message, access);
 		const context = message.isGroup ? this.takeGroupContext(message, access) : undefined;
@@ -482,8 +501,14 @@ export class Bridge {
 			"- Name is talking to you directly from their phone. Answer Name directly, as \"you\" — don't describe their message to someone else or ask what to reply to them.",
 			"- Your final answer is sent to them automatically. Don't use a tool just to reply.",
 			"- Keep answers short and chat-friendly. Summarize long code, and write files to disk instead.",
-			"- Voice notes arrive already transcribed, e.g. `[WhatsApp · Name · voice note · your reply is spoken to Name]`. Transcripts can contain misheard words.",
-			"- When the label says \"your reply is spoken\", your answer becomes voice notes automatically (long answers are split into parts). Write it exactly as it should be said: no symbols, units or abbreviations (\"13 degrees\", not \"13°C\"; \"40 percent\", not \"40%\"; \"25 kilometers\", not \"25 km\"), and no code, tables, links or emoji.",
+			...(settings.voice.understand
+				? ["- Voice notes arrive already transcribed, e.g. `[WhatsApp · Name · voice note · your reply goes to Name]`. Transcripts can contain misheard words."]
+				: []),
+			...(settings.voice.reply
+				? [
+						"- When the label says \"your reply is spoken\", your answer becomes voice notes automatically (long answers are split into parts). Write it exactly as it should be said: no symbols, units or abbreviations (\"13 degrees\", not \"13°C\"; \"40 percent\", not \"40%\"; \"25 kilometers\", not \"25 km\"), and no code, tables, links or emoji.",
+					]
+				: []),
 			"- Group labels look like `[WhatsApp group \"Team\" · Name · your reply goes to the group]`: answer the group. You only get group messages that mention or reply to you; the ones before it may come first as `earlier messages, for context`. Use them to understand the question, but answer only the last message.",
 			`- ${language}`,
 		].join("\n");

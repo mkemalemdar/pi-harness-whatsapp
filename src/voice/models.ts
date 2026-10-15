@@ -42,7 +42,7 @@ interface RepoFile {
 	sha256?: string;
 }
 
-export type ModelKind = "stt" | "tts" | "runtime" | "old";
+export type ModelKind = "stt" | "tts" | "runtime";
 
 export interface ModelSpec {
 	/** Directory name under models/ (or a fixed name for the engine). */
@@ -50,6 +50,8 @@ export interface ModelSpec {
 	kind: ModelKind;
 	/** Rough download size, for messages. */
 	approxMB: number;
+	/** Size on disk once installed, for the settings. */
+	diskMB: number;
 	/** Hugging Face repo, commit, and the files to fetch (path prefixes). */
 	hf?: { repo: string; revision: string; include?: string[] };
 }
@@ -58,6 +60,7 @@ export const WHISPER_SPEC: ModelSpec = {
 	name: "whisper-large-v3-turbo-int8-ov",
 	kind: "stt",
 	approxMB: 828,
+	diskMB: 828,
 	hf: { repo: "OpenVINO/whisper-large-v3-turbo-int8-ov", revision: "b568445dd5dc8c695bde596f8acbb4694fd6ba64" },
 };
 
@@ -65,15 +68,16 @@ export const SUPERTONIC_SPEC: ModelSpec = {
 	name: "supertonic-3",
 	kind: "tts",
 	approxMB: 401,
+	diskMB: 401,
 	hf: { repo: "Supertone/supertonic-3", revision: "3cadd1ee6394adea1bd021217a0e650ede09a323", include: ["onnx/", "voice_styles/", "LICENSE"] },
 };
 
-export const RUNTIME_SPEC: ModelSpec = { name: "openvino-runtime", kind: "runtime", approxMB: 195 };
+export const RUNTIME_SPEC: ModelSpec = { name: "openvino-runtime", kind: "runtime", approxMB: 195, diskMB: 202 };
 
-/** A model folder from an older version of the extension (Piper voices, sherpa Whisper). */
-export function oldModelSpec(name: string): ModelSpec {
-	return { name, kind: "old", approxMB: 0 };
-}
+/** What each voice part needs on disk. The engine is shared. */
+export const PART_SPECS = { understand: [RUNTIME_SPEC, WHISPER_SPEC], reply: [RUNTIME_SPEC, SUPERTONIC_SPEC] } as const;
+export const KNOWN_SPECS: readonly ModelSpec[] = [RUNTIME_SPEC, WHISPER_SPEC, SUPERTONIC_SPEC];
+
 
 /**
  * Intel's Node packages for OpenVINO: the npm tarball (pinned by its integrity
@@ -105,8 +109,8 @@ export type ProgressListener = (spec: ModelSpec, fraction: number | undefined) =
 
 export class ModelStore {
 	private readonly inFlight = new Map<string, Promise<string>>();
-	/** Aborts every running download (see cancelDownloads). */
-	private cancel = new AbortController();
+	/** One per running download, to cancel it. */
+	private readonly cancels = new Map<string, AbortController>();
 
 	constructor(
 		private readonly root: string,
@@ -129,16 +133,41 @@ export class ModelStore {
 		if (this.isInstalled(spec)) return Promise.resolve(this.dir(spec));
 		const running = this.inFlight.get(spec.name);
 		if (running) return running;
-		const job = (spec.kind === "runtime" ? this.installRuntime(spec) : this.install(spec)).finally(() => this.inFlight.delete(spec.name));
+		this.cancels.set(spec.name, new AbortController());
+		const job = (spec.kind === "runtime" ? this.installRuntime(spec) : this.install(spec)).finally(() => {
+			this.inFlight.delete(spec.name);
+			this.cancels.delete(spec.name);
+		});
 		this.inFlight.set(spec.name, job);
 		return job;
 	}
 
 	/** Stops all running downloads and waits until they have let go of their files. */
-	async cancelDownloads(): Promise<void> {
-		this.cancel.abort();
-		await Promise.allSettled([...this.inFlight.values()]);
-		this.cancel = new AbortController();
+	async cancelDownloads(names?: readonly string[]): Promise<void> {
+		const jobs: Array<Promise<string>> = [];
+		for (const [name, job] of this.inFlight) {
+			if (names && !names.includes(name)) continue;
+			this.cancels.get(name)?.abort();
+			jobs.push(job);
+		}
+		await Promise.allSettled(jobs);
+	}
+
+	/**
+	 * Deletes everything in the models folder except the `keep` folders and the
+	 * unfinished downloads of `resume` (which continue later): folders from older
+	 * versions, and partial downloads nothing needs. Returns the names deleted.
+	 */
+	removeLeftovers(keep: readonly string[], resume: readonly string[]): string[] {
+		if (!existsSync(this.root)) return [];
+		const removed: string[] = [];
+		for (const name of readdirSync(this.root)) {
+			if (keep.includes(name) || resume.some((kept) => name === `.${kept}.downloading`)) continue;
+			if (this.inFlight.has(name.replace(/^\.(.+)\.downloading$/, "$1"))) continue;
+			rmSync(join(this.root, name), { recursive: true, force: true });
+			removed.push(name);
+		}
+		return removed;
 	}
 
 	isDownloading(spec: ModelSpec): boolean {
@@ -270,7 +299,7 @@ export class ModelStore {
 				await this.fetchOnce(spec, url, target, onBytes);
 				return;
 			} catch (error) {
-				if (this.cancel.signal.aborted) throw new Error(`download of ${spec.name} cancelled`);
+				if (this.cancels.get(spec.name)?.signal.aborted) throw new Error(`download of ${spec.name} cancelled`);
 				if ((error as { permanent?: boolean }).permanent || attempt >= DOWNLOAD_ATTEMPTS) throw error;
 				log.warn(`download of ${spec.name} interrupted, trying again (${attempt}/${DOWNLOAD_ATTEMPTS - 1})`, error);
 				await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
@@ -290,7 +319,7 @@ export class ModelStore {
 		try {
 			const response = await fetch(url, {
 				redirect: "follow",
-				signal: AbortSignal.any([abort.signal, this.cancel.signal]),
+				signal: AbortSignal.any([abort.signal, ...(this.cancels.has(spec.name) ? [this.cancels.get(spec.name)!.signal] : [])]),
 				...(have > 0 ? { headers: { Range: `bytes=${have}-` } } : {}),
 			});
 			if (response.status === 416) {

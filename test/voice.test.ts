@@ -79,7 +79,10 @@ describe("Media.deliverReply", () => {
 		dir = mkdtempSync(join(tmpdir(), "phw-media-"));
 		settings = new SettingsStore(join(dir, "config.json"));
 		settings.load();
-		settings.update((draft) => addLanguage(draft, "tr"));
+		settings.update((draft) => {
+			addLanguage(draft, "tr");
+			draft.voice = { understand: true, reply: true };
+		});
 		sent = [];
 		voice = new FakeVoice();
 		const queue = new SendQueue(
@@ -137,6 +140,16 @@ describe("Media.deliverReply", () => {
 		await media.deliverReply("c", "Tamam.", { voiceIn: true, language: "tr" });
 		expect((sent[0] as { text: string }).text).toBe(`⏳ Getting the voice ready (one-time download, ~${SUPERTONIC_SPEC.approxMB} MB)…`);
 		expect("audio" in sent[1]!).toBe(true);
+	});
+
+	it("only ever sends text while voice replies are off, whatever the reply type", async () => {
+		settings.update((draft) => {
+			draft.voice.reply = false;
+			draft.voiceMode = "voice";
+		});
+		await media.deliverReply("c", "Tamam, hallettim.", { voiceIn: true, language: "tr" });
+		expect(kinds()).toEqual(["text"]);
+		expect(voice.spoken).toEqual([]);
 	});
 
 	it("sends text, not an empty voice note, when there is nothing to say", async () => {

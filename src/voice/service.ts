@@ -10,7 +10,7 @@ import type { GlobalSettings, SettingsStore } from "../settings.ts";
 import { decodeToSamples, encodeVoiceNote, ffmpegAvailable } from "./audio.ts";
 import { SpeechEngine } from "./engine.ts";
 import { detectLanguage } from "./language.ts";
-import { type ModelSpec, ModelStore, oldModelSpec, RUNTIME_SPEC, runtimeSupported, SUPERTONIC_SPEC, WHISPER_SPEC } from "./models.ts";
+import { KNOWN_SPECS, type ModelSpec, ModelStore, PART_SPECS, RUNTIME_SPEC, runtimeSupported, SUPERTONIC_SPEC, WHISPER_SPEC } from "./models.ts";
 
 const log = createLogger("voice");
 /** Longest single voice note (about 1.5–2 minutes); longer answers are split into parts. */
@@ -27,13 +27,6 @@ export interface Transcript {
 export interface VoiceEvents {
 	/** A download started (fraction 0), progressed, or finished (undefined). */
 	onDownload?(spec: ModelSpec, fraction: number | undefined): void;
-}
-
-export interface SpeechFile {
-	name: string;
-	label: string;
-	kind: ModelSpec["kind"];
-	sizeMB: number;
 }
 
 export class VoiceService {
@@ -56,9 +49,33 @@ export class VoiceService {
 		return chosen && VOICES.some((voice) => voice.id === chosen) ? chosen : VOICES[0]!.id;
 	}
 
-	/** Everything the current settings need: the engine, speech-to-text, and the voices when replies can be spoken. */
+	/** What the voice switches need: nothing when both are off; the shared engine plus each switched-on part. */
 	neededModels(settings: Readonly<GlobalSettings> = this.settings.get()): ModelSpec[] {
-		return settings.voiceMode === "off" ? [RUNTIME_SPEC, WHISPER_SPEC] : [RUNTIME_SPEC, WHISPER_SPEC, SUPERTONIC_SPEC];
+		const specs = new Set<ModelSpec>();
+		if (settings.voice.understand) for (const spec of PART_SPECS.understand) specs.add(spec);
+		if (settings.voice.reply) for (const spec of PART_SPECS.reply) specs.add(spec);
+		return KNOWN_SPECS.filter((spec) => specs.has(spec));
+	}
+
+	/**
+	 * Deletes leftovers from older versions (Piper voices, sherpa Whisper) and
+	 * unfinished downloads of files nothing needs. The speech files themselves
+	 * are only deleted when the user switches a part off.
+	 */
+	removeLeftovers(): string[] {
+		const removed = this.models.removeLeftovers(
+			KNOWN_SPECS.map((spec) => spec.name),
+			this.neededModels().map((spec) => spec.name),
+		);
+		if (removed.length > 0) log.info(`deleted leftovers from older versions: ${removed.join(", ")}`);
+		return removed;
+	}
+
+	/** Deletes speech files (stopping their downloads and unloading the engine first). */
+	async removeFiles(names: readonly string[]): Promise<void> {
+		await this.models.cancelDownloads(names);
+		await this.engine.unload();
+		for (const spec of KNOWN_SPECS) if (names.includes(spec.name)) this.models.remove(spec);
 	}
 
 	/** Starts downloading anything missing, without waiting. */
@@ -67,15 +84,6 @@ export class VoiceService {
 			if (this.models.isInstalled(spec) || this.models.isDownloading(spec)) continue;
 			void this.models.ensure(spec).catch((error) => log.warn(`download of ${spec.name} failed`, error));
 		}
-	}
-
-	/** Model folders on disk that nothing uses: older Piper/sherpa models, or the voices while replies are text only. */
-	unusedModels(): ModelSpec[] {
-		const needed = new Set(this.neededModels().map((spec) => spec.name));
-		return this.models
-			.installedNames()
-			.filter((name) => !needed.has(name))
-			.map((name) => (name === WHISPER_SPEC.name ? WHISPER_SPEC : name === SUPERTONIC_SPEC.name ? SUPERTONIC_SPEC : oldModelSpec(name)));
 	}
 
 	missingModels(): ModelSpec[] {
@@ -91,17 +99,7 @@ export class VoiceService {
 				return "speech-to-text (Whisper turbo)";
 			case "tts":
 				return "voices (Supertonic)";
-			default:
-				if (spec.name.startsWith("vits-piper-")) return `old voice: ${spec.name.slice("vits-piper-".length)}`;
-				if (spec.name.startsWith("sherpa-onnx-whisper-")) return `old speech-to-text: ${spec.name.slice("sherpa-onnx-whisper-".length)}`;
-				return spec.name;
 		}
-	}
-
-	/** Name, label, kind and size (real size on disk, or the download size). */
-	file(spec: ModelSpec, onDisk: boolean): SpeechFile {
-		const sizeMB = onDisk ? Math.round(this.models.sizeOf(spec) / 1e6) : spec.approxMB;
-		return { name: spec.name, label: this.describe(spec), kind: spec.kind, sizeMB };
 	}
 
 	/** Speaks a short text with a specific voice (for "Send me a sample"). */
@@ -144,12 +142,15 @@ export class VoiceService {
 
 	/** One line for /status. */
 	statusLine(): string {
+		const { understand, reply } = this.settings.get().voice;
+		if (!understand && !reply) return "Voice: off";
 		const missing = this.missingModels();
 		const downloading = missing.filter((spec) => this.models.isDownloading(spec));
 		const disk = `${Math.round(this.models.diskUsage() / 1e6)} MB on disk`;
 		if (downloading.length > 0) return `Voice: downloading ${downloading.map((spec) => this.describe(spec)).join(", ")} · ${disk}`;
 		if (missing.length > 0) return `Voice: ${missing.length} file set(s) still to download (on first use) · ${disk}`;
-		return `Voice: ready · ${disk}${this.engine.isLoaded() ? " · loaded" : ""}`;
+		const parts = [understand ? "understands voice notes" : "", reply ? "replies with voice" : ""].filter(Boolean).join(" + ");
+		return `Voice: ${parts} · ready · ${disk}${this.engine.isLoaded() ? " · loaded" : ""}`;
 	}
 
 	async shutdown(): Promise<void> {

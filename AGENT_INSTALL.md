@@ -22,8 +22,16 @@ Do these yourself before asking anything, so your questions can include the resu
   echo '{"type":"get_commands"}' | pi --mode rpc | grep '"get_commands"'
   ```
   If another package already registers `/whatsapp` (each entry shows its `source`), tell the user it has to be removed first, and ask before removing it. Other WhatsApp extensions that use different command names can stay.
-- **ffmpeg:** run `ffmpeg -version`. Without it, text still works, but voice notes don't. If it's missing, ask before installing it (it usually needs sudo: `sudo apt install ffmpeg`, `brew install ffmpeg`, …), and **record what you install** (see [Record what you install](#record-what-you-install-outside-pi)).
-- **Voice support on this machine:** voice notes need about **3.5 GB of free RAM** while they're processed (check with `free -m`) and **1.5 GB of disk** for the speech files. They work on Linux (x64 or ARM64), Windows (x64) and macOS on Apple Silicon, but not on Intel Macs or Windows on ARM. If the machine can't do voice, tell the user: text still works, and they should keep Reply type on text.
+- **ffmpeg** (only needed if the user wants voice): run `ffmpeg -version`. Without it, text, images and files still work, but voice notes don't. If it's missing and they want voice, ask before installing it (it usually needs sudo: `sudo apt install ffmpeg`, `brew install ffmpeg`, …), and **record what you install** (see [Record what you install](#record-what-you-install-outside-pi)).
+- **Voice support on this machine:** voice is optional and off by default. It works on Linux (x64 or ARM64), Windows (x64) and macOS on Apple Silicon, not on Intel Macs or Windows on ARM. What each part needs (check with `free -m` and `df -h ~`):
+
+  | Part | Disk | Free RAM while a voice note is handled |
+  |---|---|---|
+  | Understand voice notes (speech-to-text) | 1.0 GB | about 2 GB |
+  | Reply with voice notes (text-to-speech) | 0.6 GB | about 1.2 GB |
+  | Both | 1.4 GB | about 3.4 GB |
+
+  If the machine can't do voice, say so when you ask about it, and leave voice off.
 
 ## 2. Ask the basics
 
@@ -32,7 +40,8 @@ Ask these together, in one message, and wait for the answers:
 1. **Which WhatsApp number will Pi use?** Recommend a **second number**. The extension uses an unofficial WhatsApp Web client (Baileys), and WhatsApp may restrict numbers that use one. Using their own number also works: they then talk to Pi in the "Message yourself" chat.
 2. **Owner:** their own phone number, with country code. The owner is the only one who can change Pi from WhatsApp (`/model`, `/compact`, `/quit`, …). If they don't know it yet, skip it: the first person who messages the bot is offered as owner in the terminal.
 3. **Languages:** which languages they'll write and speak in. The default is English only. Supported: English, Turkish, German, French, Spanish, Italian, Portuguese, Dutch, Polish, Russian, Ukrainian, Arabic, Hindi, Swedish and Finnish. Hindi voice notes are less accurate than the others (see the README's table). Adding languages downloads nothing extra.
-4. **Background service:** should Pi keep running without a terminal (see "Run in the background" in the README)? Don't set it up unless they say yes. If they do, ask which project folder Pi should work in.
+4. **Voice notes:** off (the default), understand voice notes, reply with voice notes, or both? Give them the disk and RAM from the table in step 1, and the result of your check. Off means a voice note gets "🎤 Voice notes are off. Please type your message."; they can switch voice on later in `/whatsapp` → Voice notes.
+5. **Background service:** should Pi keep running without a terminal (see "Run in the background" in the README)? Don't set it up unless they say yes. If they do, ask which project folder Pi should work in.
 
 ## 3. Offer the other settings
 
@@ -40,11 +49,11 @@ Then show the remaining settings in **one** message, with the default for each, 
 
 | Setting (name in `/whatsapp`) | What it does | Default | Other choices |
 |---|---|---|---|
-| Reply type | How Pi answers | **mirror me**: a voice note gets a voice reply, text gets text | text only · voice note · voice note + text |
+| Reply type (only with "reply with voice notes") | How Pi answers | **mirror me**: a voice note gets a voice reply, text gets text (without "understand voice notes": always a voice note) | text only · voice note · voice note + text |
 | Reply language | Which language Pi answers in | **mirror me**: the language they used | always one of their languages |
 | Fallback language | Used only when Pi can't tell the language (e.g. very short replies) | **the first language** they named | any of their languages |
-| Voice per language | Which voice speaks each language | **F1** (female) | F2–F5 (female), M1–M5 (male); the same 10 voices for every language |
-| Voice reply speed | How fast voice replies are spoken | **1.0** | 0.5–2.0 (0.9 slower, 1.2 faster) |
+| Voice per language (only with "reply with voice notes") | Which voice speaks each language | **F1** (female) | F2–F5 (female), M1–M5 (male); the same 10 voices for every language |
+| Voice reply speed (only with "reply with voice notes") | How fast voice replies are spoken | **1.0** | 0.5–2.0 (0.9 slower, 1.2 faster) |
 | Terminal answers | Also sends the owner Pi's answers to prompts typed in the terminal, as text | **off** | on |
 | Progress messages | Sends what Pi writes while it's still working | **off** | on |
 | Live tool log | One message, updated live, with the latest tool steps | **off** | on |
@@ -71,11 +80,12 @@ Settings live in `~/.pi/agent/pi-harness-whatsapp/config.json`. Unknown or inval
 
 Pi reads this file when a session starts, and saves it when a setting changes. If a Pi with this extension is already running, ask the user to quit it before you write the file, so it doesn't keep the old settings or save over yours.
 
-Example: English and Turkish, a male voice for Turkish, the owner set, stats on, a slightly faster voice:
+Example: English and Turkish, voice notes both ways, a male voice for Turkish, the owner set, stats on, a slightly faster voice:
 
 ```json
 {
   "version": 1,
+  "voice": { "understand": true, "reply": true },
   "languages": ["en", "tr"],
   "voices": { "tr": "M1" },
   "voiceMode": "mirror",
@@ -88,9 +98,10 @@ Example: English and Turkish, a male voice for Turkish, the owner set, stats on,
 
 | Field | Setting | Values |
 |---|---|---|
+| `voice` | Voice notes | `{ "understand": <bool>, "reply": <bool> }`, both `false` by default. Always write this field, even when both are `false`. |
 | `languages` | My languages, Fallback language | Language codes from the table below. The **first** one is the fallback language. |
 | `voices` | Voice per language | `{ "<code>": "<voice>" }` with a voice from `F1`–`F5`, `M1`–`M5`, for the languages whose voice should differ from the default (`F1`) |
-| `voiceMode` | Reply type | `mirror` (default) · `off` (text only) · `voice` · `voice+text` |
+| `voiceMode` | Reply type | `mirror` (default) · `off` (text only) · `voice` · `voice+text`. Only used while `voice.reply` is `true`. |
 | `replyLanguage` | Reply language | `mirror` (default) or one of `languages` |
 | `voiceSpeed` | Voice reply speed | 0.5–2.0 (default 1.0) |
 | `replies` | Terminal answers, Progress messages, Live tool log, Changed files, Stats | `{ "terminal", "interim", "toolActivity", "touchedFiles", "summary" }`, booleans, all `false` by default |
@@ -106,7 +117,7 @@ Language codes: `en` English · `tr` Turkish · `de` German · `fr` French · `e
 
 If the user can't decide on a voice, keep the default and tell them they can hear each one later: `/whatsapp` → Voice per language → a voice → "Send me a sample on WhatsApp".
 
-Speech files download by themselves when first needed. You don't have to fetch them.
+Speech files download by themselves when first needed: with voice switched on in the file, the first voice note (or the first spoken reply) waits for the download, and the chat is told. You don't have to fetch them. Tell the user. If they'd rather download right away, leave `voice` off in the file and have them tick the parts in `/whatsapp` → Voice notes after starting Pi: leaving that menu asks "Download now (recommended)" or "When first needed".
 
 ## Record what you install outside Pi
 
@@ -159,8 +170,9 @@ Tell the user:
 
 Then tell them, briefly:
 
-- Anything that isn't a command goes to Pi as a prompt. Voice notes, images and files work too: Pi sees images, gets files saved for it to open, and can send images and files back when asked ("send me the screenshot").
-- To remove it later, the README's **Uninstall** section has the steps (in Pi: `/whatsapp` → Connection → Remove everything, then `pi uninstall`).
+- Anything that isn't a command goes to Pi as a prompt. Images and files work too: Pi sees images, gets files saved for it to open, and can send images and files back when asked ("send me the screenshot").
+- Voice notes, if they turned them on: understanding and replying can each be switched on or off in `/whatsapp` → Voice notes; switching a part off deletes its files after asking. To stop voice replies without deleting anything, set Reply type to text.
+- To remove it later, the README's **Uninstall** section has the steps (in Pi: `/whatsapp` → Danger → Remove everything, or `/whatsapp remove`, then `pi uninstall`).
 - If they want Pi in a group: add the bot's number to the group, have someone write there, then allow it in `/whatsapp` → Allowed chats → Pick from recent chats. In the group, people @mention Pi or reply to its messages; Pi also sees the last 20 text messages before that for context. You can't allow a group for them in advance, because the group's id is only known once it appears in recent chats. Remind them that every member of an allowed group can prompt Pi.
 - From WhatsApp they can switch the model (`/model`), the reasoning level (`/think`), compact (`/compact`), stop a run (`/stop`), start a new session (`/new`) and change the reply type, language, speed and extras (`/voice`, `/lang`, `/speed`, `/replies`). Menus come as polls: tap an option.
 - Everything else, including on/off, allowed chats and voices, is in `/whatsapp` in the terminal.
@@ -222,7 +234,7 @@ The extension writes nowhere else. It never edits shell profiles or creates file
    The first question is "Remove everything?"; then one "Also remove …?" per program in `setup.json`. Records with `"method": "notify"` are progress and the result; the last one starts with `WhatsApp removed.` and lists what was done and any command left for you to run. Show it to the user, then close stdin so Pi quits. Read stdout as a stream and split records on `\n` only (see Pi's `docs/rpc.md`).
 
    **Or the user**, in Pi:
-   1. run `/whatsapp` → **Connection** → **Remove everything (before uninstalling)…** (or type `/whatsapp remove`) and confirm. It unlinks the phone, deletes the data folder, removes this extension's entries from npm's cache, and asks about each program in `setup.json` (removing exactly the recorded packages, after an apt dry run that keeps everything if anything else would go too),
+   1. run `/whatsapp` → **Danger** → **Remove everything (before uninstalling)…** (or type `/whatsapp remove`) and confirm. It unlinks the phone, deletes the data folder, removes this extension's entries from npm's cache, and asks about each program in `setup.json` (removing exactly the recorded packages, after an apt dry run that keeps everything if anything else would go too),
    2. read you its summary (the last notice), then quit Pi.
 
    **Already uninstalled?** The cleanest way is to install it again (`pi install npm:pi-harness-whatsapp`) and do the step above (over RPC, or the user); it then also cleans what the first uninstall left behind.

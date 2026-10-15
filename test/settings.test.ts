@@ -12,6 +12,7 @@ import {
 	removeLanguage,
 	restoreSessionState,
 	SESSION_ENTRY_TYPE,
+	replyMode,
 	SettingsStore,
 } from "../src/settings.ts";
 
@@ -58,6 +59,26 @@ describe("normalizeSettings", () => {
 			{ id: "905551234567", name: "Alex", owner: true },
 			{ id: "120363000000000001@g.us", name: "Team" },
 		]);
+	});
+});
+
+describe("voice switches", () => {
+	it("are off by default, and only true when set to true", () => {
+		expect(defaultSettings().voice).toEqual({ understand: false, reply: false });
+		expect(normalizeSettings({ voice: { understand: true, reply: "yes" } }).voice).toEqual({ understand: true, reply: false });
+	});
+
+	it("make replies text while voice replies are off", () => {
+		const settings = defaultSettings();
+		settings.voiceMode = "voice";
+		expect(replyMode(settings)).toBe("off");
+		settings.voice.reply = true;
+		expect(replyMode(settings)).toBe("voice");
+		// Mirror me can't mirror without understanding voice notes: replies are spoken.
+		settings.voiceMode = "mirror";
+		expect(replyMode(settings)).toBe("voice");
+		settings.voice.understand = true;
+		expect(replyMode(settings)).toBe("mirror");
 	});
 });
 
@@ -145,6 +166,20 @@ describe("SettingsStore", () => {
 		expect(statSync(file).mode & 0o777).toBe(0o600);
 		expect(readdirSync(join(dir, "nested"))).toEqual(["config.json"]);
 		expect(new SettingsStore(file).load().voiceMode).toBe("voice");
+	});
+
+	it("tells a file from before the voice switches apart from a new one", () => {
+		const file = join(dir, "config.json");
+		writeFileSync(file, JSON.stringify({ version: 1, voiceMode: "mirror" }));
+		const store = new SettingsStore(file);
+		store.load();
+		expect(store.isFromOlderVersion()).toBe(true);
+		store.update((draft) => {
+			draft.voice.reply = true;
+		});
+		store.load();
+		expect(store.isFromOlderVersion()).toBe(false);
+		expect(new SettingsStore(join(dir, "missing.json")).isFromOlderVersion()).toBe(false);
 	});
 
 	it("keeps a corrupt file aside and starts from defaults", () => {

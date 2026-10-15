@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AnyMessageContent, WAMessage } from "baileys";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Bridge } from "../src/bridge.ts";
+import { Bridge, VOICE_OFF_NOTICE } from "../src/bridge.ts";
 import { SettingsStore } from "../src/settings.ts";
 import { SendQueue } from "../src/wa/outbound.ts";
 import { RecentsStore } from "../src/wa/recents.ts";
@@ -250,6 +250,9 @@ describe("Bridge routing", () => {
 	});
 
 	it("labels voice notes with where the spoken reply goes", async () => {
+		h.settings.update((draft) => {
+			draft.voice = { understand: true, reply: true };
+		});
 		let label = "";
 		(h.bridge as unknown as { deps: { media: unknown } }).deps.media = {
 			prepare: async (_message: unknown, header: (voiceTag?: string) => string) => {
@@ -267,6 +270,41 @@ describe("Bridge routing", () => {
 		});
 		await h.bridge.handleUpsert([incoming("voice")], "notify");
 		expect(label).toBe("[WhatsApp · Alex · voice note · your reply goes to Alex]");
+		// Voice replies off: never "spoken", whatever the reply type says.
+		start(1);
+		await h.bridge.onSettled(false);
+		h.settings.update((draft) => {
+			draft.voiceMode = "voice";
+			draft.voice.reply = false;
+		});
+		await h.bridge.handleUpsert([incoming("voice")], "notify");
+		expect(label).toBe("[WhatsApp · Alex · voice note · your reply goes to Alex]");
+	});
+
+	it("answers voice notes with 'please type' while voice notes are off, without bothering Pi", async () => {
+		const voiceNote = (extra: Record<string, unknown> = {}): WAMessage => {
+			counter++;
+			return {
+				key: { id: `V${counter}`, remoteJid: `${OWNER_PHONE}@s.whatsapp.net`, fromMe: false },
+				messageTimestamp: Math.floor(Date.now() / 1000),
+				pushName: "Alex",
+				message: { audioMessage: { seconds: 3, ptt: true, mimetype: "audio/ogg; codecs=opus" } },
+				...extra,
+			} as WAMessage;
+		};
+		await h.bridge.handleUpsert([voiceNote()], "notify");
+		await h.bridge.handleUpsert([voiceNote()], "notify");
+		expect(h.prompts).toEqual([]);
+		expect(h.texts()).toEqual([VOICE_OFF_NOTICE, VOICE_OFF_NOTICE]);
+		// The first message of someone new, allowed in the terminal, gets the same answer.
+		h.settings.update((draft) => {
+			draft.contacts = [];
+		});
+		await h.bridge.handleUpsert([voiceNote({ key: { id: "NEW1", remoteJid: "4477001122@s.whatsapp.net", fromMe: false } })], "notify");
+		expect(h.prompts).toEqual([]);
+		expect(h.texts().at(-1)).toBe(VOICE_OFF_NOTICE);
+		expect(h.bridge.systemPromptSection()).not.toContain("Voice notes arrive");
+		expect(h.bridge.systemPromptSection()).not.toContain("your reply is spoken");
 	});
 
 	it("hands messages to Pi in the order they arrived, even when one takes longer to prepare", async () => {
@@ -345,6 +383,29 @@ describe("Bridge routing", () => {
 			});
 			await h.bridge.handleUpsert([groupMessage("hello everyone")], "notify");
 			expect(h.prompts).toHaveLength(1);
+		});
+
+		it("with voice notes off, answers only a voice note that replies to Pi", async () => {
+			const groupVoice = (replyToBot: boolean): WAMessage => {
+				n++;
+				const contextInfo = replyToBot ? { stanzaId: "OUT1", participant: `${BOT}@s.whatsapp.net`, quotedMessage: { conversation: "earlier" } } : {};
+				return {
+					key: { id: `GV${n}`, remoteJid: GROUP, participant: `${OWNER_PHONE}@s.whatsapp.net`, fromMe: false },
+					messageTimestamp: Math.floor(Date.now() / 1000),
+					pushName: "Alex",
+					message: { audioMessage: { seconds: 2, ptt: true, contextInfo } },
+				} as WAMessage;
+			};
+			h.settings.update((draft) => {
+				draft.groupReplies = "all";
+			});
+			await h.bridge.handleUpsert([groupVoice(false)], "notify");
+			expect(h.texts()).toEqual([]);
+			await h.bridge.handleUpsert([groupVoice(true)], "notify");
+			expect(h.texts()).toEqual([VOICE_OFF_NOTICE]);
+			await h.bridge.handleUpsert([groupMessage("so?", { mention: true })], "notify");
+			// The first voice note is context, as a note only.
+			expect(h.prompts[0]!.content).toContain("Alex: [sent a voice note]");
 		});
 
 		it("asks WhatsApp once for the name of a group it doesn't know", async () => {

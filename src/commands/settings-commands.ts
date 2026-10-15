@@ -2,7 +2,7 @@
 
 import { languageLabel } from "../languages.ts";
 import { formatSpeed, REPLY_TOGGLES, replyLanguageLabel, VOICE_MODE_LABELS } from "../panel-model.ts";
-import { clampSpeed, MAX_SPEED, MIN_SPEED, MIRROR, SPEED_PRESETS, type VoiceMode } from "../settings.ts";
+import { clampSpeed, MAX_SPEED, MIN_SPEED, MIRROR, replyMode, SPEED_PRESETS, type VoiceMode } from "../settings.ts";
 import { notifyTerminal, type Command, type CommandEnv } from "./types.ts";
 
 const VOICE_ALIASES: Record<string, VoiceMode> = {
@@ -14,6 +14,10 @@ const VOICE_ALIASES: Record<string, VoiceMode> = {
 	"voice+text": "voice+text",
 	mirror: "mirror",
 };
+
+/** Voice can only be switched on in the terminal: it downloads (and deletes) speech files. */
+export const VOICE_REPLIES_OFF = "Voice replies are off. Turn them on in the terminal: /whatsapp → Voice notes → Reply with voice notes.";
+const MIRROR_NEEDS_UNDERSTAND = "“Mirror me” needs Pi to understand voice notes. Turn that on in the terminal: /whatsapp → Voice notes → Understand voice notes.";
 
 function repliesState(env: CommandEnv): string {
 	const replies = env.settings.get().replies;
@@ -38,14 +42,19 @@ export function settingsCommands(): Command[] {
 					notifyTerminal(env, `reply type → ${VOICE_MODE_LABELS[mode]}`);
 					return `✅ Reply type → ${VOICE_MODE_LABELS[mode]}`;
 				};
+				const settings = env.settings.get();
+				if (!settings.voice.reply) return VOICE_REPLIES_OFF;
 				const direct = VOICE_ALIASES[args.toLowerCase()];
+				if (direct === "mirror" && !settings.voice.understand) return MIRROR_NEEDS_UNDERSTAND;
 				if (direct) return apply(direct);
-				const current = env.settings.get().voiceMode;
+				const current = replyMode(settings);
 				await env.menus.show(request.chatJid, {
 					kind: "voice",
 					title: `Reply type (now ${VOICE_MODE_LABELS[current]})`,
 					gated: true,
-					options: (["mirror", "off", "voice", "voice+text"] as const).map((mode) => ({ label: `${mode === current ? "✓ " : ""}${VOICE_MODE_LABELS[mode]}`, value: mode })),
+					options: (["mirror", "off", "voice", "voice+text"] as const)
+						.filter((mode) => mode !== "mirror" || settings.voice.understand)
+						.map((mode) => ({ label: `${mode === current ? "✓ " : ""}${VOICE_MODE_LABELS[mode]}`, value: mode })),
 					onPick: async ([mode]) => apply(mode as VoiceMode),
 				});
 				return undefined;
@@ -93,6 +102,7 @@ export function settingsCommands(): Command[] {
 					notifyTerminal(env, `voice speed → ${formatSpeed(saved.voiceSpeed)}`);
 					return `✅ Voice reply speed → ${formatSpeed(saved.voiceSpeed)}`;
 				};
+				if (!env.settings.get().voice.reply) return VOICE_REPLIES_OFF;
 				if (args) {
 					const value = Number.parseFloat(args.replace(",", "."));
 					if (!Number.isFinite(value)) return `Send a number from ${MIN_SPEED} to ${MAX_SPEED}, e.g. /speed 1.15`;

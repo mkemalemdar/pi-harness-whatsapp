@@ -8,7 +8,7 @@ import { basename, extname, join } from "node:path";
 import type { MediaHandler, PreparedPrompt } from "./bridge.ts";
 import { isCodeHeavy, splitForSpeech, textForSpeech } from "./format.ts";
 import { createLogger } from "./log.ts";
-import type { SettingsStore } from "./settings.ts";
+import { replyMode, type SettingsStore } from "./settings.ts";
 import { chooseSpeechLanguage } from "./voice/language.ts";
 import { MAX_SPOKEN_CHARS, MAX_VOICE_PARTS, type VoiceService } from "./voice/service.ts";
 import type { WhatsAppConnection } from "./wa/connection.ts";
@@ -188,7 +188,7 @@ export class Media implements MediaHandler {
 
 	async deliverReply(chatJid: string, text: string, context: { voiceIn: boolean; language?: string }): Promise<void> {
 		const settings = this.deps.settings.get();
-		const mode = settings.voiceMode;
+		const mode = replyMode(settings);
 		const wantVoice = mode === "voice" || mode === "voice+text" || (mode === "mirror" && context.voiceIn);
 		if (!wantVoice) {
 			await this.deps.queue.sendText(chatJid, text);

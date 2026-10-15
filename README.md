@@ -11,19 +11,31 @@ Talk to the [Pi coding agent](https://pi.dev) from WhatsApp: text, voice notes, 
 - **Scan a QR code once and you're in.** Pi runs as a linked device of a WhatsApp number. The login is saved, and Pi reconnects on its own.
 - **Replies are automatic.** Pi's final answer is always sent back. The model doesn't have to call a tool.
 - **You choose what else you get:** a summary line (`✅ 4/6 tool calls ok · ⏱ 2m 14s`), in-between messages, the list of touched files, and a live tool-activity message.
-- **Voice notes both ways, on your own CPU.** [Whisper](https://github.com/openai/whisper) turbo understands them and [Supertonic 3](https://huggingface.co/Supertone/supertonic-3) speaks the replies, both through Intel's [OpenVINO](https://github.com/openvinotoolkit/openvino). No GPU or cloud service needed, in 15 languages.
+- **Optional voice notes, both ways, on your own CPU.** [Whisper](https://github.com/openai/whisper) turbo understands them and [Supertonic 3](https://huggingface.co/Supertone/supertonic-3) speaks the replies, both through Intel's [OpenVINO](https://github.com/openvinotoolkit/openvino). No GPU or cloud service needed, in 15 languages. Off by default; see below for what it costs.
 - **Images and files both ways.** Send Pi a photo or screenshot and it sees it; send a file (PDF, log, zip, …) and it's saved for Pi to open. Ask Pi for an image or a file and it sends it to your chat, and screenshots its tools take can come automatically.
 - **Control Pi from WhatsApp** with commands and poll menus: `/model`, `/think`, `/compact`, `/stop`, `/new`, `/status`, …
 - **A real off switch.** Off means disconnected: nothing is read or sent, and the WhatsApp tools disappear from the model.
+
+> **Voice is optional and off by default.** Turn it on in `/whatsapp` → **Voice notes**, one part or both:
+>
+> | Part | Disk | RAM while a voice note is handled |
+> |---|---|---|
+> | Understand voice notes (speech-to-text) | 1.0 GB | about 2 GB |
+> | Reply with voice notes (text-to-speech) | 0.6 GB | about 1.2 GB |
+> | Both | 1.4 GB (they share a 202 MB engine) | about 3.4 GB |
+>
+> The files download only once you switch a part on, and switching it off deletes them again. The models are unloaded after 10 minutes without voice work, so idle RAM use is zero. Everything runs on the CPU; nothing goes to the cloud.
 
 > **Use a second number if you can.** This extension uses [Baileys](https://github.com/WhiskeySockets/Baileys), an unofficial WhatsApp Web client. WhatsApp can restrict numbers that use unofficial clients, so a spare number is the safe choice.
 
 ## Requirements
 
 - Pi 1.2 or newer
-- `ffmpeg` on the PATH (for voice notes): `sudo apt install ffmpeg`
-- For voice notes: Linux (x64 or ARM64), Windows (x64) or macOS on Apple Silicon. OpenVINO has no build for Intel Macs or Windows on ARM; text works there, voice notes don't.
-- For voice notes: about 3.5 GB of free RAM while they're being processed, and 1.5 GB of disk
+
+Only if you turn voice on:
+- `ffmpeg` on the PATH: `sudo apt install ffmpeg`
+- Linux (x64 or ARM64), Windows (x64) or macOS on Apple Silicon. OpenVINO has no build for Intel Macs or Windows on ARM; text, images and files work there, voice notes don't.
+- The disk and free RAM from the table above.
 
 ## Install
 
@@ -73,27 +85,29 @@ Every row opens a small menu with the choices and a short explanation. Nothing c
 | Section | Setting | Choices and what it does |
 |---|---|---|
 | Connection | WhatsApp (this session) | On · **Off**. Continued sessions get their own value back; new sessions start with the last value you chose. |
-| | Connection | Connect now, show a new QR code (pair again), log out, or remove everything before uninstalling (see [Uninstall](#uninstall)). |
+| | Connection | Connect now, show a new QR code (pair again), or log out. |
 | | Allowed chats | People and groups that can talk to Pi. ★ marks the owner. Pick from recent chats, add a number by hand, rename, remove, or make someone the owner. |
 | | In groups, answer | **Replies and @mentions** · replies to Pi · @mentions only · every message. See [Groups](#groups). |
 | | Who can use commands | **Only me** (the owner) · all allowed chats. |
 | | Ask on/off at session start | On · **Off**. Asks whether WhatsApp should be on when a session opens. |
 | Replies | Final answer | Always on. |
-| | Reply type | **Mirror me** (voice note in → voice reply) · text · voice · voice + text. |
 | | Terminal answers | On · **Off**. Also sends the owner Pi's answers to prompts typed in the terminal, as text. |
 | | Progress messages | On · **Off**. What Pi writes while it's still working. |
 | | Live tool log | On · **Off**. One message, updated live, with the latest tool steps. |
 | | Changed files | On · **Off**. The files Pi wrote or edited. |
 | | Stats (tools · time) | On · **Off**. A line like `✅ 4/6 tool calls ok · ⏱ 2m 14s`. |
 | | Auto-send tool images | On · **Off**. Every image a tool makes while answering you (e.g. browser screenshots). You can always ask Pi to send a specific image instead. |
+| Voice | Voice notes | Two ticks, both **off**: **Understand voice notes** (1.0 GB) and **Reply with voice notes** (0.6 GB), plus **Delete all speech files**. See [Voice](#voice). |
+| | Reply type | **Mirror me** (voice note in → voice reply) · text · voice · voice + text. Greyed out until "Reply with voice notes" is on; without "Understand voice notes", mirror me isn't available and replies are spoken. |
+| | Voice per language | Which voice speaks each language: one of 10 voices, **F1**–F5 (female) and M1–M5 (male), the same list for every language. "Send me a sample" sends a short voice note to your WhatsApp first. Greyed out until "Reply with voice notes" is on. |
+| | Voice reply speed | 0.9 · **1.0** · 1.2 · custom (0.5–2.0). Greyed out until "Reply with voice notes" is on. |
 | Languages | Reply language | **Mirror me** (the language you used) or one of your languages. |
 | | My languages | Tick the languages you use (**English**). See [Voice](#voice) for the 15 languages. |
 | | Fallback language | Used only when Pi can't tell which language to use (**the first of your languages**). |
-| | Voice per language | Which voice speaks each language: one of 10 voices, **F1**–F5 (female) and M1–M5 (male), the same list for every language. "Send me a sample" sends a short voice note to your WhatsApp first. |
-| Technical | Voice reply speed | 0.9 · **1.0** · 1.2 · custom (0.5–2.0). |
-| | Speech files | Download what your settings need, or delete unused files (shown as a ticked list; untick what you want to keep). |
+| Danger | Remove everything (before uninstalling) | Unlinks Pi from your phone and deletes everything it made. Asks first. See [Uninstall](#uninstall). |
+| | Log file | Where the log is (shown, not a setting). |
 
-Speech files are never downloaded just because you look at a choice. When you close the panel and your new settings need files, Pi asks once: download now, or later when first needed.
+Greyed-out rows can still be selected: they say which tick in **Voice notes** turns them on.
 
 Settings are stored in `~/.pi/agent/pi-harness-whatsapp/config.json`.
 
@@ -104,13 +118,13 @@ Commands are handled by the extension and never reach the model. Send `/help` to
 | Command | What it does |
 |---|---|
 | `/help` | Commands and current settings |
-| `/status` | Connection, model, thinking level, context use, voice models |
+| `/status` | Connection, model, thinking level, context use, voice |
 | `/stop` | Stop what Pi is doing |
 | `/compact [focus]` | Compact the context, then report e.g. `✅ Compacted in 18s · 142k → 23k tokens (−84%) · context 89% free` |
 | `/autocompact [on\|off]` | Automatic compaction for this session (Pi still compacts if the context is completely full) |
 | `/model [name]` | Switch the model for this session; lists only models with a login or API key |
 | `/think [level]` | Reasoning level, limited to what the model supports |
-| `/voice [text\|voice\|both\|mirror]` · `/lang` · `/speed [x]` | Reply type, reply language, voice reply speed |
+| `/voice [text\|voice\|both\|mirror]` · `/lang` · `/speed [x]` | Reply type, reply language, voice reply speed. `/voice` and `/speed` work once voice replies are on; voice itself is switched on only in the terminal, since it downloads files. |
 | `/replies` | Switch the reply extras on and off (multi-choice poll) |
 | `/languages` | Show your languages (change them in the terminal) |
 | `/new` | Start a fresh Pi session (the old one stays saved) |
@@ -122,6 +136,18 @@ Commands are handled by the extension and never reach the model. Send `/help` to
 
 ## Voice
 
+Voice is optional and **off by default**. In `/whatsapp` → **Voice notes**, tick what you want:
+
+- **Understand voice notes** (speech-to-text, 1.0 GB): Pi transcribes the voice notes you send. While it's off, a voice note gets "🎤 Voice notes are off. Please type your message." and never reaches the model; in a group, only a voice note that replies to Pi gets that answer.
+- **Reply with voice notes** (text-to-speech, 0.6 GB): Pi can answer with voice notes; **Reply type**, the voices and the speed then become available. While it's off, Pi always answers with text.
+
+Downloads and deletions happen when you leave that menu:
+- **A part you ticked** whose files aren't there yet: Pi asks "Download now (recommended)" or "When first needed". "When first needed" downloads with the first voice note (the chat is told while it waits).
+- **A part you unticked:** Pi asks, e.g. "You set speech-to-text for removal. 828 MB will be freed." Yes deletes the files; No puts the tick back. The shared engine stays as long as the other part needs it.
+- **"Delete all speech files"** unticks both, and asks the same way.
+
+You don't have to untick anything to stop voice replies for a while: set **Reply type** to text.
+
 Voice notes are transcribed on your machine and given to Pi with a label, e.g. `[WhatsApp · Name · voice note · your reply is spoken to Name] …`. When the reply will be spoken, the model is told so, and writes plain speech. Long answers are read in full as several voice notes (up to ~10 minutes; anything longer also comes as text). Answers that are mostly code come as text too, since code can't be read aloud. With **Mirror me**, Pi answers in the language you used, and the voice reply uses that language's voice.
 
 Supported languages: **English, Turkish, German, French, Spanish, Italian, Portuguese, Dutch, Polish, Russian, Ukrainian, Arabic, Hindi, Swedish and Finnish**. Pi understands and speaks all of them with the same two models, so adding a language downloads nothing.
@@ -132,7 +158,7 @@ Supported languages: **English, Turkish, German, French, Spanish, Italian, Portu
 | Speaking replies | [Supertonic 3](https://huggingface.co/Supertone/supertonic-3) by Supertone (10 voices) | 401 MB |
 | Running both | Intel's OpenVINO for Node | 202 MB |
 
-Everything downloads the first time it's needed, and the chat is told while it waits. If you change languages, voices or the reply type in `/whatsapp`, Pi asks when you close the panel whether to download the new files now. Models are unloaded after 10 minutes without voice work, so idle RAM use is zero. While voice notes are being handled, Pi used about 3.4 GB of RAM in total in the test below.
+Models are unloaded after 10 minutes without voice work, so idle RAM use is zero. While a voice note is handled, Pi needed about 2 GB of RAM to understand it, about 1.2 GB to speak a reply, and about 3.4 GB with both, measured on the machine below.
 
 Measured on an Intel i5-13500, CPU only, on real recordings from Google's [FLEURS](https://huggingface.co/datasets/google/fleurs) dataset: 10 sentences per language, read by real people. Wrong words are counted against the dataset's transcript, ignoring punctuation and capitals; a number written as digits ("18") where the transcript spells it out counts as wrong. For the voice, Supertonic read a short sentence in each language and Whisper listened to it again.
 
@@ -161,7 +187,7 @@ Supertonic makes speech about 10× faster than real time, so a 20-second reply i
 **To Pi:**
 - **Images** (photos, screenshots) go to the model with their caption, so you can ask "what's wrong in this screenshot?". In a group, an image counts when its caption @mentions Pi, or when you reply to an image and @mention Pi.
 - **Files** (PDFs, documents, logs, archives, videos; up to 50 MB) are saved in `~/.pi/agent/pi-harness-whatsapp/inbox/`, and Pi is told the name, type, size and where it is, so it can open it with its own tools. Received files are deleted after 7 days.
-- **Voice notes** are transcribed; see [Voice](#voice).
+- **Voice notes** are transcribed when **Understand voice notes** is on; see [Voice](#voice).
 
 **From Pi:** ask for it ("send me the screenshot", "send me report.pdf") and Pi sends images and files from this computer to your chat, up to 60 MB. With **Auto-send tool images** on, every image a tool makes while answering you (e.g. a browser screenshot) is sent without asking.
 
@@ -184,7 +210,7 @@ Everything lives in `~/.pi/agent/pi-harness-whatsapp/`:
 |---|---|
 | `config.json` | Settings |
 | `auth/` | The WhatsApp login. Keep it private; deleting it means scanning a new QR code. |
-| `models/` | Speech models and the OpenVINO engine that runs them |
+| `models/` | Speech models and the OpenVINO engine that runs them (only while voice is on) |
 | `inbox/` | Files people sent (kept 7 days) |
 | `recents.json` | Recent chat ids and names, for picking contacts (no message text) |
 | `connection.lock` | Which Pi process holds the connection right now |
@@ -198,7 +224,7 @@ If you set `PI_HARNESS_WHATSAPP_DIR`, everything is in that folder instead. The 
 
 Do it in this order, so nothing is left behind.
 
-1. **Clean up from inside Pi.** Close every other Pi window first. Then run `/whatsapp` → **Connection** → **Remove everything (before uninstalling)…** (or type `/whatsapp remove`) and confirm. Pi:
+1. **Clean up from inside Pi.** Close every other Pi window first. Then run `/whatsapp` → **Danger** → **Remove everything (before uninstalling)…** (or type `/whatsapp remove`) and confirm. Pi:
    - unlinks itself from your phone (WhatsApp → Settings → Linked devices),
    - stops any speech-file download that's still running,
    - deletes `~/.pi/agent/pi-harness-whatsapp/` with everything in it: the WhatsApp login, speech files, settings, allowed chats, recent chats, log and received files,
@@ -253,7 +279,8 @@ Removal is careful: with apt, it first does a dry run and keeps everything if re
 - **"needs a new QR scan":** WhatsApp logged the device out (for example, it was removed from Linked devices). Connection → Show a new QR code.
 - **"in use by Pi #…":** another Pi holds the connection; turn WhatsApp off there.
 - **Messages are ignored:** the sender isn't in Allowed chats. Pi shows a notice in the terminal the first time.
-- **Voice notes fail:** check that `ffmpeg -version` works. The first voice note waits for the speech files to download (about 1.4 GB); a download that stalls for a minute is given up and tried again with the next voice note. On Intel Macs and Windows on ARM, voice notes aren't available.
+- **"Voice notes are off":** tick **Understand voice notes** in `/whatsapp` → Voice notes.
+- **Voice notes fail:** check that `ffmpeg -version` works. With "When first needed", the first voice note waits for the download (up to 1.4 GB); a download that drops continues where it stopped, and one that stalls for a minute is given up and tried again with the next voice note. On Intel Macs and Windows on ARM, voice notes aren't available.
 - **More detail:** set `PI_HARNESS_WHATSAPP_DEBUG=1` before starting Pi, and check the log. Debug logging also writes WhatsApp's own internal messages, which can contain message content, so turn it off again afterwards.
 
 ## Development

@@ -19,11 +19,12 @@ import { createLogger, logFilePath } from "./log.ts";
 import { cleanInbox, Media } from "./media.ts";
 import type { SpeechInfo } from "./panel-model.ts";
 import { getLanguage } from "./languages.ts";
-import { type ConnectionCommand, type PanelHost, type SpeechFile, showPanel } from "./panel.ts";
+import { type ConnectionCommand, type PanelHost, showPanel } from "./panel.ts";
 import { dataDir, paths, removeDataDir } from "./paths.ts";
 import { isRemoved, markRemoved } from "./removed.ts";
 import { detectService } from "./commands/power.ts";
 import {
+	type GlobalSettings,
 	restoreSessionState,
 	SESSION_ENTRY_TYPE,
 	type SessionState,
@@ -34,7 +35,7 @@ import { contactJid, phoneJid } from "./wa/jid.ts";
 import { SendQueue } from "./wa/outbound.ts";
 import { PollMenus } from "./wa/polls.ts";
 import { RecentsStore } from "./wa/recents.ts";
-import { type ModelSpec, RUNTIME_SPEC, SUPERTONIC_SPEC } from "./voice/models.ts";
+import { KNOWN_SPECS, type ModelSpec, RUNTIME_SPEC, SUPERTONIC_SPEC, WHISPER_SPEC } from "./voice/models.ts";
 import { VoiceService } from "./voice/service.ts";
 
 export const STATUS_KEY = "whatsapp";
@@ -129,9 +130,11 @@ export class Controller implements PanelHost, CommandEnv {
 			ctx.ui.setStatus(STATUS_KEY, REMOVED_STATUS);
 			return;
 		}
-		const settings = this.settings.load();
+		let settings = this.settings.load();
 		this.recents.load();
 		cleanInbox(paths.inbox());
+		settings = this.migrateVoice();
+		this.voice.removeLeftovers();
 		const forcedOn = this.pi.getFlag("whatsapp") === true;
 		// Only interactive and RPC sessions use WhatsApp unless the flag asks for it.
 		const interactive = ctx.mode === "tui" || ctx.mode === "rpc";
@@ -150,6 +153,20 @@ export class Controller implements PanelHost, CommandEnv {
 			// Let Pi finish starting the session before showing a dialog.
 			setTimeout(() => void this.askAtSessionStart(ctx), 0);
 		}
+	}
+
+	/**
+	 * Settings from before voice became optional: keep the parts whose files are
+	 * already on disk, so an existing setup keeps working. New installs start with voice off.
+	 */
+	private migrateVoice(): Readonly<GlobalSettings> {
+		if (!this.settings.isFromOlderVersion()) return this.settings.get();
+		const understand = this.voice.models.isInstalled(WHISPER_SPEC);
+		const reply = this.voice.models.isInstalled(SUPERTONIC_SPEC);
+		log.info(`voice settings migrated: understand ${understand}, reply ${reply}`);
+		return this.settings.update((draft) => {
+			draft.voice = { understand, reply };
+		});
 	}
 
 	/** After /tree navigation: adopt the state saved on the new branch, if it differs. */
@@ -238,7 +255,6 @@ export class Controller implements PanelHost, CommandEnv {
 			ctx.ui.notify("The WhatsApp settings panel needs the interactive terminal.", "error");
 			return;
 		}
-		const missingBefore = new Set(this.voice.missingModels().map((spec) => spec.name));
 		let focus: string | undefined;
 		for (;;) {
 			const action = await showPanel(ctx, this, focus);
@@ -254,24 +270,7 @@ export class Controller implements PanelHost, CommandEnv {
 				focus = "contacts";
 				continue;
 			}
-			await this.offerDownloads(ctx, missingBefore);
 			return;
-		}
-	}
-
-	/** After the panel closes: if the new choices need files, ask once whether to download them now. */
-	private async offerDownloads(ctx: ExtensionContext, missingBefore: ReadonlySet<string>): Promise<void> {
-		const needed = this.voice.missingModels().filter((spec) => !missingBefore.has(spec.name) && !this.voice.models.isDownloading(spec));
-		if (needed.length === 0) return;
-		const megabytes = needed.reduce((sum, spec) => sum + spec.approxMB, 0);
-		const choice = await ctx.ui.select(
-			`Download speech files? Your settings need: ${needed.map((spec) => this.voice.describe(spec)).join(", ")} (~${megabytes} MB)`,
-			["Now", "Later (downloads automatically when first needed)"],
-		);
-		if (choice === "Now") {
-			for (const spec of needed) {
-				void this.voice.models.ensure(spec).catch((error) => log.warn(`download of ${spec.name} failed`, error));
-			}
 		}
 	}
 
@@ -389,20 +388,14 @@ export class Controller implements PanelHost, CommandEnv {
 	}
 
 	speechInfo(): SpeechInfo {
+		const installed = new Set(this.voice.models.installedNames());
+		const sizesMB: Record<string, number> = {};
+		for (const spec of KNOWN_SPECS) if (installed.has(spec.name)) sizesMB[spec.name] = Math.round(this.voice.models.sizeOf(spec) / 1e6);
 		return {
-			installed: new Set(this.voice.models.installedNames()),
-			missingCount: this.voice.missingModels().length,
-			unusedCount: this.voice.unusedModels().length,
-			diskMB: Math.round(this.voice.models.diskUsage() / 1e6),
+			installed,
+			downloading: new Set(KNOWN_SPECS.filter((spec) => this.voice.models.isDownloading(spec)).map((spec) => spec.name)),
+			sizesMB,
 		};
-	}
-
-	missingFiles(): SpeechFile[] {
-		return this.voice.missingModels().map((spec) => this.voice.file(spec, false));
-	}
-
-	unusedFiles(): SpeechFile[] {
-		return this.voice.unusedModels().map((spec) => this.voice.file(spec, true));
 	}
 
 	isInstalled(name: string): boolean {
@@ -413,15 +406,15 @@ export class Controller implements PanelHost, CommandEnv {
 		this.voice.prefetch();
 	}
 
-	deleteFiles(names: readonly string[]): void {
-		for (const spec of this.voice.unusedModels()) {
-			if (names.includes(spec.name)) this.voice.models.remove(spec);
-		}
+	async removeSpeechFiles(names: readonly string[]): Promise<void> {
+		await this.voice.removeFiles(names);
+		this.renderStatus();
 	}
 
 	async sendVoiceSample(language: string, voiceId: string, onStatus: (text: string) => void): Promise<void> {
 		const owner = this.settings.get().contacts.find((contact) => contact.owner);
 		if (!owner) throw new Error("No owner set yet: add yourself in Allowed chats first.");
+		if (!this.settings.get().voice.reply) throw new Error("Voice replies are off: tick “Reply with voice notes” in Voice notes first.");
 		if (!this.session.enabled || !this.connection.isOpen()) throw new Error("WhatsApp isn't connected, so the sample can't be sent.");
 		const problem = await this.voice.unavailable();
 		if (problem) throw new Error(`Can't make voice notes here: ${problem}.`);

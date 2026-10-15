@@ -35,6 +35,12 @@ export interface ReplyToggles {
 	terminal: boolean;
 }
 
+/** Optional voice: understanding voice notes (speech-to-text) and replying with them (text-to-speech). Both off by default. */
+export interface VoiceParts {
+	understand: boolean;
+	reply: boolean;
+}
+
 export interface Contact {
 	/** Phone number digits without "+" for people, or a group JID ending in "@g.us". */
 	id: string;
@@ -48,6 +54,8 @@ export interface Contact {
 export interface GlobalSettings {
 	version: 1;
 	replies: ReplyToggles;
+	voice: VoiceParts;
+	/** "Reply type"; only used while voice.reply is on (see replyMode). */
 	voiceMode: VoiceMode;
 	/** MIRROR or a language code from `languages`. */
 	replyLanguage: string;
@@ -76,6 +84,7 @@ export function defaultSettings(): GlobalSettings {
 	return {
 		version: 1,
 		replies: { summary: false, interim: false, touchedFiles: false, toolActivity: false, terminal: false },
+		voice: { understand: false, reply: false },
 		voiceMode: "mirror",
 		replyLanguage: MIRROR,
 		languages: ["en"],
@@ -132,6 +141,7 @@ export function normalizeSettings(raw: unknown): GlobalSettings {
 	if (!isRecord(raw)) return defaults;
 
 	const replies = isRecord(raw.replies) ? raw.replies : {};
+	const voice = isRecord(raw.voice) ? raw.voice : {};
 	const languages = Array.isArray(raw.languages)
 		? [...new Set(raw.languages.filter((code): code is string => typeof code === "string" && !!getLanguage(code)))]
 		: [];
@@ -170,6 +180,7 @@ export function normalizeSettings(raw: unknown): GlobalSettings {
 			toolActivity: bool(replies.toolActivity, defaults.replies.toolActivity),
 			terminal: bool(replies.terminal, defaults.replies.terminal),
 		},
+		voice: { understand: bool(voice.understand, false), reply: bool(voice.reply, false) },
 		voiceMode: pick(raw.voiceMode, VOICE_MODES, defaults.voiceMode),
 		replyLanguage,
 		languages,
@@ -184,23 +195,39 @@ export function normalizeSettings(raw: unknown): GlobalSettings {
 	};
 }
 
+/**
+ * How replies go out: text ("off") whenever voice replies are off, otherwise
+ * the chosen reply type. "Mirror me" answers voice notes with voice, so without
+ * understanding voice notes it means "voice": someone who only switched on
+ * voice replies wants to hear them.
+ */
+export function replyMode(settings: Readonly<GlobalSettings>): VoiceMode {
+	if (!settings.voice.reply) return "off";
+	return settings.voiceMode === "mirror" && !settings.voice.understand ? "voice" : settings.voiceMode;
+}
+
 export type SettingsListener = (settings: Readonly<GlobalSettings>) => void;
 
 /** Loads, validates and atomically saves config.json. */
 export class SettingsStore {
 	private settings: GlobalSettings = defaultSettings();
 	private readonly listeners = new Set<SettingsListener>();
+	/** The file is from a version without the voice switches (see Controller.migrateVoice). */
+	private olderFile = false;
 
 	constructor(private readonly filePath: string) {}
 
 	/** Reads the file. A corrupt file is kept as config.json.bad-<time> and replaced by defaults. */
 	load(): Readonly<GlobalSettings> {
+		this.olderFile = false;
 		if (!existsSync(this.filePath)) {
 			this.settings = defaultSettings();
 			return this.settings;
 		}
 		try {
-			this.settings = normalizeSettings(JSON.parse(readFileSync(this.filePath, "utf8")));
+			const raw = JSON.parse(readFileSync(this.filePath, "utf8")) as unknown;
+			this.olderFile = isRecord(raw) && !("voice" in raw);
+			this.settings = normalizeSettings(raw);
 		} catch {
 			try {
 				renameSync(this.filePath, `${this.filePath}.bad-${Date.now()}`);
@@ -214,6 +241,11 @@ export class SettingsStore {
 
 	get(): Readonly<GlobalSettings> {
 		return this.settings;
+	}
+
+	/** True when the loaded file was saved before voice became optional. */
+	isFromOlderVersion(): boolean {
+		return this.olderFile;
 	}
 
 	/**

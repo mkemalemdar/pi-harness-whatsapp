@@ -4,10 +4,13 @@
  */
 
 import { getLanguage, LANGUAGES, languageLabel } from "./languages.ts";
+import { KNOWN_SPECS, type ModelSpec, PART_SPECS } from "./voice/models.ts";
 import {
 	clampSpeed,
 	type GlobalSettings,
 	MIRROR,
+	replyMode,
+	type VoiceParts,
 	GROUP_REPLY_MODES,
 	type GroupReplies,
 	type ReplyToggles,
@@ -79,9 +82,11 @@ export interface Choice {
 	label: string;
 	/** Short note shown next to the choice (size, RAM, "on disk"…). */
 	detail?: string;
+	/** Shown greyed out and can't be picked (the detail says why). */
+	disabled?: boolean;
 }
 
-export type RowKind = "header" | "choice" | "languages" | "voices" | "speed" | "speechFiles" | "connection" | "contacts";
+export type RowKind = "header" | "choice" | "languages" | "voices" | "speed" | "voiceNotes" | "connection" | "contacts" | "remove" | "info";
 
 export interface PanelRow {
 	id: string;
@@ -93,16 +98,18 @@ export interface PanelRow {
 	choices?: Choice[];
 	/** Value of the current choice (marked with ●). */
 	current?: string;
-	/** Section the row belongs to, e.g. "Technical" (set by buildRows). */
+	/** Section the row belongs to, e.g. "Voice" (set by buildRows). */
 	section?: string;
+	/** Greyed out: why, and what to switch on to use it. */
+	locked?: string;
 }
 
 /** What the panel needs to know about speech files on disk. */
 export interface SpeechInfo {
 	installed: ReadonlySet<string>;
-	missingCount: number;
-	unusedCount: number;
-	diskMB: number;
+	downloading: ReadonlySet<string>;
+	/** Real size on disk of installed files, in MB. */
+	sizesMB: Readonly<Record<string, number>>;
 }
 
 export interface PanelState {
@@ -110,6 +117,86 @@ export interface PanelState {
 	enabled: boolean;
 	connection: string;
 	speech: SpeechInfo;
+	logFile: string;
+}
+
+export type VoicePart = keyof VoiceParts;
+export const VOICE_PARTS: readonly VoicePart[] = ["understand", "reply"];
+export const PART_LABELS: Record<VoicePart, string> = { understand: "Understand voice notes", reply: "Reply with voice notes" };
+/** What each part is called in the removal question. */
+const PART_FILES: Record<VoicePart, string> = { understand: "speech-to-text", reply: "text-to-speech" };
+const REPLY_LOCKED = "Voice replies are off. Open “Voice notes” and tick “Reply with voice notes” to use this.";
+
+/** "828 MB", "1.4 GB" */
+export function formatSize(megabytes: number): string {
+	return megabytes >= 1000 ? `${(megabytes / 1000).toFixed(1)} GB` : `${Math.round(megabytes)} MB`;
+}
+
+const specsOf = (parts: readonly VoicePart[]): ModelSpec[] => KNOWN_SPECS.filter((spec) => parts.some((part) => (PART_SPECS[part] as readonly ModelSpec[]).includes(spec)));
+const onParts = (voice: VoiceParts): VoicePart[] => VOICE_PARTS.filter((part) => voice[part]);
+
+/** Disk space of a part (or both: the engine counts once). */
+export function partsDiskMB(parts: readonly VoicePart[]): number {
+	return specsOf(parts).reduce((sum, spec) => sum + spec.diskMB, 0);
+}
+
+/** "understand + reply · 1.4 GB · on disk" */
+export function voiceSummary(voice: VoiceParts, speech: SpeechInfo): string {
+	const parts = onParts(voice);
+	if (parts.length === 0) return "off";
+	const name = parts.length === 2 ? "understand + reply" : parts[0] === "understand" ? "understand only" : "reply only";
+	const specs = specsOf(parts);
+	const state = specs.every((spec) => speech.installed.has(spec.name))
+		? "on disk"
+		: specs.some((spec) => speech.downloading.has(spec.name))
+			? "downloading"
+			: "downloads when first needed";
+	return `${name} · ${formatSize(partsDiskMB(parts))} · ${state}`;
+}
+
+export interface VoicePlan {
+	/** Files to delete, the parts they belong to (for the question), and the space freed. */
+	remove: { files: string[]; parts: VoicePart[]; megabytes: number };
+	/** Files to download for parts switched on, and the download size. */
+	download: { files: string[]; parts: VoicePart[]; megabytes: number };
+}
+
+/**
+ * What leaving the Voice notes menu means: files of parts switched off are
+ * deleted (unless the other part still needs them), files of parts switched
+ * on are downloaded. "Delete all" removes every speech file on disk.
+ */
+export function voicePlan(before: VoiceParts, after: VoiceParts, deleteAll: boolean, speech: SpeechInfo): VoicePlan {
+	const switchedOff = VOICE_PARTS.filter((part) => (before[part] || deleteAll) && !after[part]);
+	const switchedOn = VOICE_PARTS.filter((part) => !before[part] && after[part]);
+	const needed = new Set(specsOf(onParts(after)).map((spec) => spec.name));
+	const present = (spec: ModelSpec) => speech.installed.has(spec.name) || speech.downloading.has(spec.name);
+	const removable = (deleteAll ? KNOWN_SPECS : specsOf(switchedOff)).filter((spec) => present(spec) && !needed.has(spec.name));
+	const missing = specsOf(switchedOn).filter((spec) => !present(spec));
+	return {
+		remove: {
+			files: removable.map((spec) => spec.name),
+			parts: switchedOff,
+			megabytes: removable.reduce((sum, spec) => sum + (speech.sizesMB[spec.name] ?? spec.diskMB), 0),
+		},
+		download: {
+			files: missing.map((spec) => spec.name),
+			parts: switchedOn,
+			megabytes: missing.reduce((sum, spec) => sum + spec.approxMB, 0),
+		},
+	};
+}
+
+/** "You set speech-to-text for removal. 828 MB will be freed." */
+export function removalQuestion(plan: VoicePlan): string {
+	const what = plan.remove.parts.length > 0 ? plan.remove.parts.map((part) => PART_FILES[part]).join(" and ") : "the speech files";
+	return `You set ${what} for removal. ${formatSize(plan.remove.megabytes)} will be freed.`;
+}
+
+/** "Reply with voice notes needs text-to-speech (~0.6 GB download)." */
+export function downloadQuestion(plan: VoicePlan): string {
+	const parts = plan.download.parts;
+	return `${parts.map((part) => PART_LABELS[part]).join(" and ")} ${parts.length > 1 ? "need" : "needs"} ${parts.map((part) => PART_FILES[part]).join(" and ")} (~${formatSize(plan.download.megabytes)} download).`;
 }
 
 const onOff = (value: boolean) => (value ? ON : OFF);
@@ -137,13 +224,6 @@ export function contactsSummary(settings: Readonly<GlobalSettings>): string {
 	if (count === 0) return "none yet";
 	const owner = settings.contacts.find((contact) => contact.owner);
 	return `${count} allowed${owner ? ` · owner: ${owner.name ?? `+${owner.id}`}` : " · no owner set"}`;
-}
-
-export function speechFilesSummary(speech: SpeechInfo): string {
-	const parts = [`${speech.installed.size} on disk · ${speech.diskMB} MB`];
-	parts.push(speech.missingCount > 0 ? `${speech.missingCount} missing` : "nothing missing");
-	if (speech.unusedCount > 0) parts.push(`${speech.unusedCount} unused`);
-	return parts.join(" · ");
 }
 
 const header = (id: string, label: string, description: string): PanelRow => ({
@@ -222,19 +302,6 @@ export function buildRows(state: PanelState): PanelRow[] {
 			current: ALWAYS_ON,
 			choices: [{ value: ALWAYS_ON, label: ALWAYS_ON, detail: "can't be turned off" }],
 		},
-		{
-			id: "voiceMode",
-			label: "Reply type",
-			description: "Whether Pi answers with text, a voice note, or both.",
-			currentValue: VOICE_MODE_LABELS[settings.voiceMode],
-			kind: "choice",
-			current: settings.voiceMode,
-			choices: (["mirror", "off", "voice", "voice+text"] as const).map((mode) => ({
-				value: mode,
-				label: VOICE_MODE_LABELS[mode],
-				detail: VOICE_MODE_DESCRIPTIONS[mode],
-			})),
-		},
 	];
 	for (const toggle of REPLY_TOGGLES) {
 		rows.push({
@@ -258,7 +325,51 @@ export function buildRows(state: PanelState): PanelRow[] {
 			choices: onOffChoices("send them all", "only when you ask for one"),
 		},
 
-		header("languages", "LANGUAGES", "Which languages Pi answers and speaks in."),
+		header("voice", "VOICE", "Optional voice notes, both ways. Off by default."),
+		{
+			id: "voiceNotes",
+			label: "Voice notes",
+			description: `Optional. Understanding voice notes takes ${formatSize(partsDiskMB(["understand"]))} of disk, replying with voice notes ${formatSize(partsDiskMB(["reply"]))}, both ${formatSize(partsDiskMB(VOICE_PARTS))}.`,
+			currentValue: voiceSummary(settings.voice, speech),
+			kind: "voiceNotes",
+		},
+		{
+			id: "voiceMode",
+			label: "Reply type",
+			description: "Whether Pi answers with text, a voice note, or both.",
+			currentValue: VOICE_MODE_LABELS[replyMode(settings)],
+			kind: "choice",
+			current: replyMode(settings),
+			choices: (["mirror", "off", "voice", "voice+text"] as const).map((mode) => {
+				// "Mirror me" answers voice with voice, so Pi has to understand voice notes.
+				const needsUnderstand = mode === "mirror" && !settings.voice.understand;
+				return {
+					value: mode,
+					label: VOICE_MODE_LABELS[mode],
+					detail: needsUnderstand ? "needs “Understand voice notes”" : VOICE_MODE_DESCRIPTIONS[mode],
+					...(needsUnderstand ? { disabled: true } : {}),
+				};
+			}),
+			...(settings.voice.reply ? {} : { locked: REPLY_LOCKED }),
+		},
+		{
+			id: "voices",
+			label: "Voice per language",
+			description: "Which voice speaks each language. You can get a sample on WhatsApp before choosing.",
+			currentValue: settings.languages.map((code) => voiceLabel(code, settings.voices[code])).join(", "),
+			kind: "voices",
+			...(settings.voice.reply ? {} : { locked: REPLY_LOCKED }),
+		},
+		{
+			id: "voiceSpeed",
+			label: "Voice reply speed",
+			description: "How fast Pi's voice replies are spoken.",
+			currentValue: formatSpeed(settings.voiceSpeed),
+			kind: "speed",
+			...(settings.voice.reply ? {} : { locked: REPLY_LOCKED }),
+		},
+
+		header("languages", "LANGUAGES", "Which languages Pi answers in, and understands and speaks when voice is on."),
 		{
 			id: "replyLanguage",
 			label: "Reply language",
@@ -275,7 +386,7 @@ export function buildRows(state: PanelState): PanelRow[] {
 		{
 			id: "languages",
 			label: "My languages",
-			description: "The languages you use. Pi understands them in voice notes and can reply in them.",
+			description: "The languages you use. Pi replies in them, and understands and speaks them when voice is on.",
 			currentValue: settings.languages.map(languageLabel).join(", "),
 			kind: "languages",
 		},
@@ -288,28 +399,22 @@ export function buildRows(state: PanelState): PanelRow[] {
 			current: settings.languages[0]!,
 			choices: settings.languages.map((code) => ({ value: code, label: languageLabel(code) })),
 		},
-		{
-			id: "voices",
-			label: "Voice per language",
-			description: "Which voice speaks each language. You can get a sample on WhatsApp before choosing.",
-			currentValue: settings.languages.map((code) => voiceLabel(code, settings.voices[code])).join(", "),
-			kind: "voices",
-		},
 
-		header("technical", "TECHNICAL", "How voice notes are processed on this machine."),
+		header("danger", "DANGER", "Can't be undone."),
 		{
-			id: "voiceSpeed",
-			label: "Voice reply speed",
-			description: "How fast Pi's voice replies are spoken.",
-			currentValue: formatSpeed(settings.voiceSpeed),
-			kind: "speed",
+			id: "remove",
+			label: "Remove everything (before uninstalling)…",
+			description:
+				"Unlinks Pi from your phone; deletes the login, speech files, settings, log, received files and npm's cached copies; asks about programs installed for it. Asks first. Same as /whatsapp remove.",
+			currentValue: "",
+			kind: "remove",
 		},
 		{
-			id: "speechFiles",
-			label: "Speech files",
-			description: "Download what your settings need, or delete files you no longer use.",
-			currentValue: speechFilesSummary(speech),
-			kind: "speechFiles",
+			id: "log",
+			label: `Log file: ${state.logFile}`,
+			description: "Connection events and errors, never message text.",
+			currentValue: "",
+			kind: "info",
 		},
 	);
 	let section = "";

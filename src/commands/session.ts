@@ -3,6 +3,7 @@
 import { languageLabel } from "../languages.ts";
 import { formatSpeed, REPLY_TOGGLES, replyLanguageLabel, VOICE_MODE_LABELS } from "../panel-model.ts";
 import { formatDuration } from "../run-report.ts";
+import { replyMode } from "../settings.ts";
 import { notifyTerminal, type Command, type CommandEnv } from "./types.ts";
 
 export function formatTokens(tokens: number): string {
@@ -43,8 +44,10 @@ function modelLine(env: CommandEnv): string {
 function settingsLines(env: CommandEnv): string[] {
 	const settings = env.settings.get();
 	const replies = REPLY_TOGGLES.map((toggle) => `${toggle.label.toLowerCase()} ${settings.replies[toggle.key] ? "✓" : "✗"}`).join(", ");
+	const { understand, reply } = settings.voice;
 	return [
-		`Reply type: ${VOICE_MODE_LABELS[settings.voiceMode]} · voice reply speed ${formatSpeed(settings.voiceSpeed)}`,
+		`Voice notes: understand ${understand ? "✓" : "✗"} · reply ${reply ? "✓" : "✗"}${understand || reply ? "" : " (turn on in the terminal: /whatsapp → Voice notes)"}`,
+		reply ? `Reply type: ${VOICE_MODE_LABELS[replyMode(settings)]} · voice reply speed ${formatSpeed(settings.voiceSpeed)}` : "Reply type: text",
 		`Reply language: ${replyLanguageLabel(settings.replyLanguage)} · languages: ${settings.languages.map(languageLabel).join(", ")}`,
 		`Replies: final ✓, ${replies}`,
 		...(env.voiceStatus ? [env.voiceStatus()] : []),
@@ -78,7 +81,7 @@ export function sessionCommands(): Command[] {
 					"*Commands*",
 					...list,
 					"",
-					"Anything else you send goes to Pi. Voice notes and images work too.",
+					`Anything else you send goes to Pi. Images and files work too${env.settings.get().voice.understand ? ", and voice notes" : ""}.`,
 				].join("\n");
 			},
 		},

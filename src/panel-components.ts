@@ -126,6 +126,8 @@ export class ListMenu implements Component {
 		const description = this.selected()?.description;
 		if (description) for (const line of wrapTextWithAnsi(t.fg("muted", description), width)) lines.push(line);
 		lines.push(t.fg("dim", this.options.hint ?? "↑↓ move · Enter choose · Esc back"));
+		// A blank line keeps the menu visually apart from Pi's own lines below it.
+		lines.push("");
 		return lines;
 	}
 
@@ -182,6 +184,7 @@ export class InputStep implements Component {
 			"",
 			...(this.error ? [t.fg("error", this.error)] : []),
 			t.fg("dim", "Enter save · Esc back"),
+			"",
 		];
 	}
 }

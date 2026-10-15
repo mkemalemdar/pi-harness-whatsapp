@@ -49,6 +49,7 @@ describe("ListMenu", () => {
 		expect(text).toContain("What this setting does.");
 		expect(text).toMatch(/→ ● on\s+sent/);
 		expect(text).toContain("Turns it on.");
+		expect(list.render(80).at(-1)).toBe("");
 		list.setStatus("Deleted 2 files.", "ok");
 		expect(list.render(80).join("\n")).toContain("Deleted 2 files.");
 	});

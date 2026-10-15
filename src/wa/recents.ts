@@ -79,6 +79,11 @@ export class RecentsStore {
 		this.scheduleSave();
 	}
 
+	/** The name known for a chat id (phone digits or group JID). */
+	nameOf(id: string): string | undefined {
+		return this.chats.get(id)?.name;
+	}
+
 	/** Most recent first. */
 	list(): RecentChat[] {
 		return [...this.chats.values()].sort((a, b) => b.lastMessageAt - a.lastMessageAt);

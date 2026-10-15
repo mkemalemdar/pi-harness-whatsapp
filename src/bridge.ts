@@ -138,6 +138,7 @@ export class Bridge {
 	private sendChain: Promise<void> = Promise.resolve();
 	/** Per allowed group: recent messages Pi didn't answer (text only, in memory). */
 	private readonly groupContext = new Map<string, Array<{ name: string; text: string }>>();
+	private readonly groupNameAsked = new Set<string>();
 	private enabledAt = Date.now();
 	private skippedWhileOff = new Map<string, number>();
 	private skippedNoticeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -190,6 +191,7 @@ export class Bridge {
 		}
 		// "append" are history/own-device messages; only live ones are handled.
 		if (type !== "notify") return;
+		if (message.isGroup && !this.deps.recents.nameOf(message.chatJid)) void this.learnGroupName(message.chatJid, message.timestamp);
 		if (message.fromMe && this.deps.connection.isOwnMessage(message.id)) return;
 		if (!this.seen.add(message.id)) return;
 
@@ -272,6 +274,27 @@ export class Bridge {
 		if (!history?.length) return undefined;
 		const lines = history.map((entry) => `${entry.name}: ${entry.text}`);
 		return [`[WhatsApp group "${access.contact?.name ?? "group"}" · earlier messages, for context]`, ...lines].join("\n");
+	}
+
+	/** Asks WhatsApp for a group's name, for "Pick from recent chats" and an allowed group without a name. */
+	private async learnGroupName(jid: string, at: number): Promise<void> {
+		// Once per group: WhatsApp doesn't like many lookups.
+		if (this.groupNameAsked.has(jid)) return;
+		this.groupNameAsked.add(jid);
+		try {
+			const name = await this.deps.connection.groupName(jid);
+			if (!name) return;
+			this.deps.recents.see({ jid, name, at });
+			const contact = this.deps.settings.get().contacts.find((entry) => entry.id === jid);
+			if (contact && !contact.name) {
+				this.deps.settings.update((draft) => {
+					const entry = draft.contacts.find((existing) => existing.id === jid);
+					if (entry && !entry.name) entry.name = name;
+				});
+			}
+		} catch (error) {
+			log.debug("could not learn a group name", error);
+		}
 	}
 
 	/** Fills in the phone number for LID-only senders when WhatsApp has told us the mapping. */
@@ -378,23 +401,33 @@ export class Bridge {
 		if (!this.deps.getCtx()) return;
 		void this.deps.connection.presence(message.chatJid, "composing");
 		const header = this.header(message, access);
-		const prepared = this.deps.media
-			? await this.deps.media.prepare(message, header)
-			: { content: `${header()} ${message.text || `(sent ${message.kind})`}`, voice: false };
 		const context = message.isGroup ? this.takeGroupContext(message, access) : undefined;
-		if (context) prepared.content = prependText(prepared.content, context);
-		// Message text stays out of the log on purpose.
-		log.info(`→ Pi: ${message.kind} message from ${header()}`);
-		const entry: Expected = {
-			text: promptText(prepared.content),
-			chatJid: message.chatJid,
-			voice: prepared.voice,
-			...(prepared.language ? { language: prepared.language } : {}),
-		};
+		// Prepared right away (downloads, transcription), but handed to Pi in the order
+		// messages arrived: a text sent after a voice note doesn't overtake it.
+		const preparing = (async (): Promise<PreparedPrompt> => {
+			const prepared = this.deps.media
+				? await this.deps.media.prepare(message, header)
+				: { content: `${header()} ${message.text || `(sent ${message.kind})`}`, voice: false };
+			if (context) prepared.content = prependText(prepared.content, context);
+			return prepared;
+		})();
+		// Its failure is handled in the chain; this only stops an "unhandled rejection" before then.
+		preparing.catch(() => {});
 		// Resolves once the prompt is handed to Pi; waiting for it to start happens in the chain.
 		await new Promise<void>((sent) => {
 			this.sendChain = this.sendChain
-				.then(() => this.submit(entry, prepared.content, sent))
+				.then(async () => {
+					const prepared = await preparing;
+					// Message text stays out of the log on purpose.
+					log.info(`→ Pi: ${message.kind} message from ${header()}`);
+					const entry: Expected = {
+						text: promptText(prepared.content),
+						chatJid: message.chatJid,
+						voice: prepared.voice,
+						...(prepared.language ? { language: prepared.language } : {}),
+					};
+					await this.submit(entry, prepared.content, sent);
+				})
 				.catch((error) => {
 					sent();
 					log.error("failed to hand a message to Pi", error);

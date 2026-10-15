@@ -7,10 +7,10 @@
 import { getLanguage, LANGUAGES, languageLabel, VOICES } from "../languages.ts";
 import { createLogger } from "../log.ts";
 import type { GlobalSettings, SettingsStore } from "../settings.ts";
-import { decodeToSamples, encodeVoiceNote } from "./audio.ts";
+import { decodeToSamples, encodeVoiceNote, ffmpegAvailable } from "./audio.ts";
 import { SpeechEngine } from "./engine.ts";
 import { detectLanguage } from "./language.ts";
-import { type ModelSpec, ModelStore, oldModelSpec, RUNTIME_SPEC, SUPERTONIC_SPEC, WHISPER_SPEC } from "./models.ts";
+import { type ModelSpec, ModelStore, oldModelSpec, RUNTIME_SPEC, runtimeSupported, SUPERTONIC_SPEC, WHISPER_SPEC } from "./models.ts";
 
 const log = createLogger("voice");
 /** Longest single voice note (about 1.5–2 minutes); longer answers are split into parts. */
@@ -39,6 +39,7 @@ export interface SpeechFile {
 export class VoiceService {
 	readonly models: ModelStore;
 	readonly engine: SpeechEngine;
+	private hasFfmpeg = false;
 
 	constructor(
 		private readonly settings: SettingsStore,
@@ -105,14 +106,16 @@ export class VoiceService {
 
 	/** Speaks a short text with a specific voice (for "Send me a sample"). */
 	async speakWith(text: string, language: string, voice: string): Promise<{ audio: Buffer; seconds: number }> {
+		await this.requireFfmpeg();
 		const spoken = await this.engine.speak(await this.ready(SUPERTONIC_SPEC), text, language, voice, this.settings.get().voiceSpeed);
 		return encodeVoiceNote(spoken.samples, spoken.sampleRate);
 	}
 
 	/** Voice note audio → text and language. */
 	async transcribe(audio: Buffer): Promise<Transcript> {
-		const dir = await this.ready(WHISPER_SPEC);
+		// Decoded first: without ffmpeg this fails before anything is downloaded.
 		const samples = await decodeToSamples(audio);
+		const dir = await this.ready(WHISPER_SPEC);
 		const first = await this.engine.transcribe(dir, samples);
 		const enabled = this.settings.get().languages;
 		if (!first.text) return { text: "", ms: first.ms };
@@ -134,6 +137,7 @@ export class VoiceService {
 	async speak(text: string, language: string): Promise<{ audio: Buffer; seconds: number }> {
 		const settings = this.settings.get();
 		if (!getLanguage(language)) throw new Error(`no voice for ${languageLabel(language)}`);
+		await this.requireFfmpeg();
 		const spoken = await this.engine.speak(await this.ready(SUPERTONIC_SPEC), text, language, this.voiceFor(language, settings), settings.voiceSpeed);
 		return encodeVoiceNote(spoken.samples, spoken.sampleRate);
 	}
@@ -150,6 +154,18 @@ export class VoiceService {
 
 	async shutdown(): Promise<void> {
 		await this.engine.unload();
+	}
+
+	/** Why voice notes can't work on this machine, if they can't (checked before any download). */
+	async unavailable(): Promise<string | undefined> {
+		if (!runtimeSupported()) return `voice notes aren't available on ${process.platform}/${process.arch} (OpenVINO has no build for it)`;
+		this.hasFfmpeg ||= await ffmpegAvailable();
+		return this.hasFfmpeg ? undefined : "ffmpeg is not installed (needed for voice notes)";
+	}
+
+	private async requireFfmpeg(): Promise<void> {
+		const problem = await this.unavailable();
+		if (problem) throw new Error(problem);
 	}
 
 	/** Makes sure the engine and the given model are on disk; returns the model folder. */

@@ -28,6 +28,16 @@ export function contactLabel(contact: Pick<Contact, "id" | "name" | "lid">): str
 	return contact.name ? `${contact.name} (${address})` : address;
 }
 
+/** Makes labels unique ("group", "group (2)"), so picking one picks the right chat. */
+function distinct(labels: string[]): string[] {
+	const seen = new Map<string, number>();
+	return labels.map((label) => {
+		const count = (seen.get(label) ?? 0) + 1;
+		seen.set(label, count);
+		return count === 1 ? label : `${label} (${count})`;
+	});
+}
+
 export async function contactsFlow(
 	ctx: ExtensionContext,
 	store: SettingsStore,
@@ -35,7 +45,7 @@ export async function contactsFlow(
 ): Promise<void> {
 	for (;;) {
 		const contacts = store.get().contacts;
-		const rows = contacts.map((contact) => `${contact.owner ? "★ " : "  "}${contactLabel(contact)}`);
+		const rows = distinct(contacts.map((contact) => `${contact.owner ? "★ " : "  "}${contactLabel(contact)}`));
 		const choice = await ctx.ui.select("Allowed chats (★ = owner)", [...rows, ADD_RECENT, ADD_NUMBER, BACK]);
 		if (choice === undefined || choice === BACK) return;
 
@@ -59,7 +69,7 @@ async function addFromRecents(ctx: ExtensionContext, store: SettingsStore, chats
 		ctx.ui.notify("No recent chats to add yet. Connect WhatsApp and let someone message this number.", "info");
 		return;
 	}
-	const labels = candidates.map((chat) => `${chat.isGroup ? "👥 " : ""}${contactLabel(chat)}`);
+	const labels = distinct(candidates.map((chat) => `${chat.isGroup ? "👥 " : ""}${contactLabel(chat)}`));
 	const picked = await ctx.ui.select("Allow which chat?", [...labels, BACK]);
 	const chat = picked === undefined ? undefined : candidates[labels.indexOf(picked)];
 	if (!chat) return;
@@ -95,7 +105,8 @@ async function addManually(ctx: ExtensionContext, store: SettingsStore): Promise
 }
 
 async function editContact(ctx: ExtensionContext, store: SettingsStore, contact: Contact): Promise<void> {
-	const makeOwner = contact.owner ? undefined : "★ Make owner";
+	// The owner is a person: groups can't be owner.
+	const makeOwner = contact.owner || contact.id.endsWith("@g.us") ? undefined : "★ Make owner";
 	const options = [makeOwner, "Rename", "Remove", BACK].filter((option): option is string => !!option);
 	const action = await ctx.ui.select(contactLabel(contact), options);
 	if (action === makeOwner) {

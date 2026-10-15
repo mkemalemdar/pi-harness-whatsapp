@@ -23,7 +23,7 @@ Do these yourself before asking anything, so your questions can include the resu
   ```
   If another package already registers `/whatsapp` (each entry shows its `source`), tell the user it has to be removed first, and ask before removing it. Other WhatsApp extensions that use different command names can stay.
 - **ffmpeg:** run `ffmpeg -version`. Without it, text still works, but voice notes don't. If it's missing, ask before installing it (it usually needs sudo: `sudo apt install ffmpeg`, `brew install ffmpeg`, …).
-- **Voice support on this machine:** voice notes need about **3.5 GB of free RAM** while they're processed (check with `free -m`) and **1.6 GB of disk** for the speech files. They work on Linux (x64 or ARM64), Windows (x64) and macOS on Apple Silicon, but not on Intel Macs or Windows on ARM. If the machine can't do voice, tell the user: text still works, and they should keep Reply type on text.
+- **Voice support on this machine:** voice notes need about **3.5 GB of free RAM** while they're processed (check with `free -m`) and **1.5 GB of disk** for the speech files. They work on Linux (x64 or ARM64), Windows (x64) and macOS on Apple Silicon, but not on Intel Macs or Windows on ARM. If the machine can't do voice, tell the user: text still works, and they should keep Reply type on text.
 
 ## 2. Ask the basics
 

@@ -304,6 +304,8 @@ export class Controller implements PanelHost, CommandEnv {
 		const owner = this.settings.get().contacts.find((contact) => contact.owner);
 		if (!owner) throw new Error("No owner set yet: add yourself in Allowed chats first.");
 		if (!this.session.enabled || !this.connection.isOpen()) throw new Error("WhatsApp isn't connected, so the sample can't be sent.");
+		const problem = await this.voice.unavailable();
+		if (problem) throw new Error(`Can't make voice notes here: ${problem}.`);
 		const missing = [RUNTIME_SPEC, SUPERTONIC_SPEC].filter((spec) => !this.voice.models.isInstalled(spec));
 		if (missing.length > 0) onStatus(`Downloading the voices (~${missing.reduce((sum, spec) => sum + spec.approxMB, 0)} MB)…`);
 		const note = await this.voice.speakWith(getLanguage(language)?.sample ?? "Hello!", language, voiceId);

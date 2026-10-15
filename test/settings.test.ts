@@ -155,6 +155,30 @@ describe("SettingsStore", () => {
 		expect(readdirSync(dir).some((name) => name.startsWith("config.json.bad-"))).toBe(true);
 	});
 
+	it("keeps one owner, never a group, and doesn't overwrite another process's changes", () => {
+		const settings = normalizeSettings({
+			contacts: [
+				{ id: "120363000000000001@g.us", owner: true },
+				{ id: "905551234567", owner: true },
+				{ id: "4155551212", owner: true },
+			],
+		});
+		expect(settings.contacts.map((contact) => !!contact.owner)).toEqual([false, true, false]);
+
+		const file = join(dir, "config.json");
+		const mine = new SettingsStore(file);
+		mine.load();
+		const other = new SettingsStore(file);
+		other.load();
+		other.update((draft) => {
+			draft.contacts.push({ id: "905551234567", name: "Alex" });
+		});
+		mine.update((draft) => {
+			draft.voiceSpeed = 1.2;
+		});
+		expect(new SettingsStore(file).load()).toMatchObject({ voiceSpeed: 1.2, contacts: [{ id: "905551234567", name: "Alex" }] });
+	});
+
 	it("re-validates whatever an update writes", () => {
 		const store = new SettingsStore(join(dir, "config.json"));
 		store.load();

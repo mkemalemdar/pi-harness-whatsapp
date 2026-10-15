@@ -15,7 +15,7 @@
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { arch, platform } from "node:os";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
@@ -28,6 +28,18 @@ const DONE_MARKER = ".complete";
 const HF = "https://huggingface.co";
 const OPENVINO_STORAGE = "https://storage.openvinotoolkit.org/repositories";
 const NPM_REGISTRY = "https://registry.npmjs.org";
+/** A download that receives nothing for this long is given up (and tried again next time). */
+const STALL_MS = 60_000;
+const REQUEST_TIMEOUT_MS = 30_000;
+/** Tries per file; each retry continues where the last one stopped. */
+const DOWNLOAD_ATTEMPTS = 4;
+
+interface RepoFile {
+	path: string;
+	size: number;
+	/** SHA-256 Hugging Face publishes for large (LFS) files. */
+	sha256?: string;
+}
 
 export type ModelKind = "stt" | "tts" | "runtime" | "old";
 
@@ -96,6 +108,8 @@ export class ModelStore {
 	constructor(
 		private readonly root: string,
 		private readonly onProgress?: ProgressListener,
+		/** Hugging Face's address (a local server in tests). */
+		private readonly hfBase = HF,
 	) {}
 
 	dir(spec: ModelSpec): string {
@@ -128,6 +142,12 @@ export class ModelStore {
 
 	remove(spec: ModelSpec): void {
 		rmSync(this.dir(spec), { recursive: true, force: true });
+		rmSync(this.staging(spec), { recursive: true, force: true });
+	}
+
+	/** Where a download is collected; kept after a failure so the next try continues it. */
+	private staging(spec: ModelSpec): string {
+		return join(this.root, `.${spec.name}.downloading`);
 	}
 
 	/** Disk use of one model, in bytes. */
@@ -143,21 +163,27 @@ export class ModelStore {
 	private async install(spec: ModelSpec): Promise<string> {
 		if (!spec.hf) throw new Error(`${spec.name} can't be downloaded`);
 		mkdirSync(this.root, { recursive: true });
-		const staging = join(this.root, `.${spec.name}.downloading`);
+		const staging = this.staging(spec);
 		log.info(`downloading ${spec.hf.repo}@${spec.hf.revision.slice(0, 8)}`);
 		this.onProgress?.(spec, 0);
 		try {
-			rmSync(staging, { recursive: true, force: true });
 			mkdirSync(staging, { recursive: true });
-			const files = await listRepoFiles(spec.hf.repo, spec.hf.revision, spec.hf.include);
+			const files = await listRepoFiles(this.hfBase, spec.hf.repo, spec.hf.revision, spec.hf.include);
 			const total = files.reduce((sum, file) => sum + file.size, 0);
 			let done = 0;
 			for (const file of files) {
 				const target = join(staging, file.path);
 				mkdirSync(dirname(target), { recursive: true });
-				await this.fetchTo(spec, `${HF}/${spec.hf.repo}/resolve/${spec.hf.revision}/${file.path}`, target, (bytes) => {
-					if (total > 0) this.onProgress?.(spec, (done + bytes) / total);
-				});
+				// Files finished by an earlier, interrupted download are kept.
+				if (!(await isComplete(target, file))) {
+					await this.fetchTo(spec, `${this.hfBase}/${spec.hf.repo}/resolve/${spec.hf.revision}/${file.path}`, target, (bytes) => {
+						if (total > 0) this.onProgress?.(spec, (done + bytes) / total);
+					});
+					if (!(await isComplete(target, file))) {
+						rmSync(target, { force: true });
+						throw new Error(`${file.path} of ${spec.name} failed its checksum`);
+					}
+				}
 				done += file.size;
 			}
 			const target = this.dir(spec);
@@ -167,7 +193,6 @@ export class ModelStore {
 			log.info(`installed ${spec.name}`);
 			return target;
 		} finally {
-			rmSync(staging, { recursive: true, force: true });
 			this.onProgress?.(spec, undefined);
 		}
 	}
@@ -227,40 +252,99 @@ export class ModelStore {
 		}
 	}
 
+	/** Downloads `url` to `target`; when the connection drops, tries again and continues where it stopped. */
 	private async fetchTo(spec: ModelSpec, url: string, target: string, onBytes: (bytes: number) => void): Promise<void> {
-		const response = await fetch(url, { redirect: "follow" });
-		if (!response.ok || !response.body) throw new Error(`download failed (${response.status}) for ${spec.name}`);
-		const expected = Number(response.headers.get("content-length") ?? 0);
-		let received = 0;
-		let lastReport = 0;
-		const body = Readable.fromWeb(response.body as WebReadableStream<Uint8Array>);
-		body.on("data", (chunk: Buffer) => {
-			received += chunk.length;
-			const now = Date.now();
-			if (now - lastReport > 1000) {
-				lastReport = now;
-				onBytes(received);
+		for (let attempt = 1; ; attempt++) {
+			try {
+				await this.fetchOnce(spec, url, target, onBytes);
+				return;
+			} catch (error) {
+				if ((error as { permanent?: boolean }).permanent || attempt >= DOWNLOAD_ATTEMPTS) throw error;
+				log.warn(`download of ${spec.name} interrupted, trying again (${attempt}/${DOWNLOAD_ATTEMPTS - 1})`, error);
+				await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
 			}
-		});
-		await pipeline(body, createWriteStream(target));
-		if (expected > 0 && received !== expected) throw new Error(`download of ${spec.name} was incomplete`);
-		onBytes(received);
+		}
+	}
+
+	private async fetchOnce(spec: ModelSpec, url: string, target: string, onBytes: (bytes: number) => void): Promise<void> {
+		const have = existsSync(target) ? statSync(target).size : 0;
+		const abort = new AbortController();
+		let stall: ReturnType<typeof setTimeout> | undefined;
+		const watch = () => {
+			clearTimeout(stall);
+			stall = setTimeout(() => abort.abort(), STALL_MS);
+		};
+		watch();
+		try {
+			const response = await fetch(url, {
+				redirect: "follow",
+				signal: abort.signal,
+				...(have > 0 ? { headers: { Range: `bytes=${have}-` } } : {}),
+			});
+			if (response.status === 416) {
+				// The partial file doesn't fit the server's file: start it over.
+				rmSync(target, { force: true });
+				throw new Error(`download of ${spec.name} has to start over`);
+			}
+			if (!response.ok || !response.body) {
+				const error = new Error(`download failed (${response.status}) for ${spec.name}`);
+				// Missing or forbidden won't change by trying again.
+				if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
+					Object.assign(error, { permanent: true });
+				}
+				throw error;
+			}
+			// 206: the server continues the partial file; 200: it sends the whole file again.
+			const start = response.status === 206 ? have : 0;
+			const length = Number(response.headers.get("content-length") ?? 0);
+			const expected = length > 0 ? start + length : 0;
+			let received = start;
+			let lastReport = 0;
+			const body = Readable.fromWeb(response.body as WebReadableStream<Uint8Array>);
+			body.on("data", (chunk: Buffer) => {
+				watch();
+				received += chunk.length;
+				const now = Date.now();
+				if (now - lastReport > 1000) {
+					lastReport = now;
+					onBytes(received);
+				}
+			});
+			await pipeline(body, createWriteStream(target, { flags: start > 0 ? "a" : "w" }));
+			if (expected > 0 && received !== expected) throw new Error(`download of ${spec.name} was incomplete`);
+			onBytes(received);
+		} catch (error) {
+			if (abort.signal.aborted) throw new Error(`download of ${spec.name} stalled (no data for ${STALL_MS / 1000} s)`);
+			throw error;
+		} finally {
+			clearTimeout(stall);
+		}
 	}
 }
 
 /** Files of a Hugging Face repo at a commit, optionally only those under the given prefixes. */
-async function listRepoFiles(repo: string, revision: string, include?: string[]): Promise<Array<{ path: string; size: number }>> {
-	const response = await fetch(`${HF}/api/models/${repo}/tree/${revision}?recursive=true`);
+async function listRepoFiles(base: string, repo: string, revision: string, include?: string[]): Promise<RepoFile[]> {
+	const response = await fetch(`${base}/api/models/${repo}/tree/${revision}?recursive=true`, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
 	if (!response.ok) throw new Error(`could not list ${repo} (${response.status})`);
-	const entries = (await response.json()) as Array<{ type: string; path: string; size?: number; lfs?: { size?: number } }>;
+	const entries = (await response.json()) as Array<{ type: string; path: string; size?: number; lfs?: { size?: number; oid?: string } }>;
 	return entries
 		.filter((entry) => entry.type === "file" && !entry.path.startsWith(".") && entry.path !== "README.md")
 		.filter((entry) => !include || include.some((prefix) => entry.path.startsWith(prefix)))
-		.map((entry) => ({ path: entry.path, size: entry.lfs?.size ?? entry.size ?? 0 }));
+		.map((entry) => ({
+			path: entry.path,
+			size: entry.lfs?.size ?? entry.size ?? 0,
+			...(entry.lfs?.oid && /^[0-9a-f]{64}$/.test(entry.lfs.oid) ? { sha256: entry.lfs.oid } : {}),
+		}));
+}
+
+/** The file is there in full, and matches its published checksum when there is one. */
+async function isComplete(path: string, file: RepoFile): Promise<boolean> {
+	if (!existsSync(path) || statSync(path).size !== file.size) return false;
+	return !file.sha256 || (await fileHash(path, "sha256", "hex")) === file.sha256;
 }
 
 async function fetchText(url: string): Promise<string> {
-	const response = await fetch(url, { redirect: "follow" });
+	const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
 	if (!response.ok) throw new Error(`download failed (${response.status}) for ${url}`);
 	return response.text();
 }
@@ -280,7 +364,9 @@ function folderSize(path: string): number {
 	let total = 0;
 	for (const entry of readdirSync(path, { withFileTypes: true })) {
 		const full = join(path, entry.name);
-		total += entry.isDirectory() ? folderSize(full) : statSync(full).size;
+		// Symlinks (e.g. libopenvino.so → libopenvino.so.2026.4.1) take no space of their own.
+		if (entry.isDirectory()) total += folderSize(full);
+		else if (entry.isFile()) total += lstatSync(full).size;
 	}
 	return total;
 }

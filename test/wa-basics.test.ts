@@ -34,6 +34,17 @@ describe("ConnectionLock", () => {
 		expect(new ConnectionLock(file).acquire()).toEqual({ ok: true });
 	});
 
+	it.runIf(process.platform === "linux")("takes over a lock whose pid now belongs to a newer process", () => {
+		const file = join(dir, "lock");
+		// This test process started long after 1970, so it can't have written this lock.
+		const lock = { pid: process.pid, host: hostname(), since: 1000 };
+		writeFileSync(file, JSON.stringify(lock));
+		expect(new ConnectionLock(file, 2 ** 22 + 1).acquire()).toEqual({ ok: true });
+		// A lock written after the process started is respected.
+		writeFileSync(file, JSON.stringify({ ...lock, since: Date.now() }));
+		expect(new ConnectionLock(file, 2 ** 22 + 1).acquire().ok).toBe(false);
+	});
+
 	it("respects a lock from another machine", () => {
 		const file = join(dir, "lock");
 		writeFileSync(file, JSON.stringify({ pid: 99999999, host: "other-box", since: 1 }));
@@ -52,7 +63,7 @@ describe("decideOnClose", () => {
 
 	it("asks for a new QR when logged out or the session is broken", () => {
 		expect(decideOnClose({ statusCode: CODES.loggedOut, attempt: 0, pairing: false }).action).toBe("repair");
-		expect(decideOnClose({ statusCode: CODES.badSession, attempt: 0, pairing: false }).action).toBe("repair");
+		expect(decideOnClose({ statusCode: CODES.badSession, attempt: 0, pairing: false }).action).toBe("reconnect");
 	});
 
 	it("stops when replaced, forbidden, or the QR expired", () => {

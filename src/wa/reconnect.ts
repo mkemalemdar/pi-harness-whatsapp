@@ -48,7 +48,6 @@ export function decideOnClose({ statusCode, attempt, pairing, random }: CloseCon
 			return { action: "reconnect", delayMs: 0 };
 		case CODES.loggedOut:
 			return { action: "repair", reason: "WhatsApp logged this device out" };
-		case CODES.badSession:
 		case CODES.multideviceMismatch:
 			return { action: "repair", reason: "the saved WhatsApp login is no longer valid" };
 		case CODES.connectionReplaced:

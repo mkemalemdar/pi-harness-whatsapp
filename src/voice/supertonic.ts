@@ -50,7 +50,7 @@ export function chunkText(text: string, maxLen = 300): string[] {
 			/(?<!Mr\.|Mrs\.|Ms\.|Dr\.|Prof\.|Sr\.|Jr\.|Ph\.D\.|etc\.|e\.g\.|i\.e\.|vs\.|Inc\.|Ltd\.|Co\.|Corp\.|St\.|Ave\.|Blvd\.)(?<!\b[A-Z]\.)(?<=[.!?])\s+/,
 		);
 		let current = "";
-		for (const sentence of sentences) {
+		for (const sentence of sentences.flatMap((sentence) => splitLong(sentence, maxLen))) {
 			if (current.length + sentence.length + 1 <= maxLen) current += (current ? " " : "") + sentence;
 			else {
 				if (current) chunks.push(current.trim());
@@ -60,6 +60,22 @@ export function chunkText(text: string, maxLen = 300): string[] {
 		if (current) chunks.push(current.trim());
 	}
 	return chunks;
+}
+
+/** A sentence longer than maxLen, cut at commas or spaces (very long inputs need much more memory). */
+function splitLong(sentence: string, maxLen: number): string[] {
+	const parts: string[] = [];
+	let rest = sentence;
+	while (rest.length > maxLen) {
+		const window = rest.slice(0, maxLen);
+		let cut = window.lastIndexOf(", ");
+		if (cut < maxLen * 0.5) cut = window.lastIndexOf(" ");
+		cut = cut > 0 ? cut + 1 : maxLen;
+		parts.push(rest.slice(0, cut).trim());
+		rest = rest.slice(cut).trim();
+	}
+	if (rest) parts.push(rest);
+	return parts;
 }
 
 /** Standard normal noise (Box–Muller). */

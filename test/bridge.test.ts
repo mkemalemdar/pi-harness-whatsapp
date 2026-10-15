@@ -269,6 +269,29 @@ describe("Bridge routing", () => {
 		expect(label).toBe("[WhatsApp · Alex · voice note · your reply goes to Alex]");
 	});
 
+	it("hands messages to Pi in the order they arrived, even when one takes longer to prepare", async () => {
+		let release!: () => void;
+		const slow = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		(h.bridge as unknown as { deps: { media: unknown } }).deps.media = {
+			prepare: async (message: { text: string }, header: () => string) => {
+				if (message.text === "first") await slow;
+				return { content: `${header()} ${message.text}`, voice: false };
+			},
+			deliverReply: async () => {},
+		};
+		const first = h.bridge.handleUpsert([incoming("first")], "notify");
+		const second = h.bridge.handleUpsert([incoming("second")], "notify");
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(h.prompts).toEqual([]);
+		release();
+		await first;
+		start(0);
+		await second;
+		expect(h.prompts.map((prompt) => String(prompt.content).split("] ")[1])).toEqual(["first", "second"]);
+	});
+
 	describe("groups", () => {
 		const GROUP = "120363000000000001@g.us";
 		const BOT = "905550000000";
@@ -322,6 +345,23 @@ describe("Bridge routing", () => {
 			});
 			await h.bridge.handleUpsert([groupMessage("hello everyone")], "notify");
 			expect(h.prompts).toHaveLength(1);
+		});
+
+		it("asks WhatsApp once for the name of a group it doesn't know", async () => {
+			const asked: string[] = [];
+			(h.connection as unknown as { groupName: (jid: string) => Promise<string> }).groupName = async (jid) => {
+				asked.push(jid);
+				return "Weekend Trip";
+			};
+			h.settings.update((draft) => {
+				draft.contacts = draft.contacts.map((contact) => (contact.id === GROUP ? { id: GROUP } : contact));
+			});
+			await h.bridge.handleUpsert([groupMessage("hi")], "notify");
+			await h.bridge.handleUpsert([groupMessage("hi again")], "notify");
+			await new Promise((resolve) => setTimeout(resolve, 10));
+			expect(asked).toEqual([GROUP]);
+			expect(h.settings.get().contacts.find((contact) => contact.id === GROUP)?.name).toBe("Weekend Trip");
+			expect(h.recents.nameOf(GROUP)).toBe("Weekend Trip");
 		});
 
 		it("takes known commands and menu numbers, and calls the mention @Pi", async () => {

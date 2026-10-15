@@ -109,7 +109,7 @@ function normalizeContact(raw: unknown): Contact | undefined {
 	const contact: Contact = { id };
 	if (typeof raw.name === "string" && raw.name.trim()) contact.name = raw.name.trim();
 	if (typeof raw.lid === "string" && /^\d+$/.test(raw.lid)) contact.lid = raw.lid;
-	if (raw.owner === true) contact.owner = true;
+	if (raw.owner === true && !id.endsWith("@g.us")) contact.owner = true;
 	return contact;
 }
 
@@ -153,7 +153,10 @@ export function normalizeSettings(raw: unknown): GlobalSettings {
 	if (Array.isArray(raw.contacts)) {
 		for (const entry of raw.contacts) {
 			const contact = normalizeContact(entry);
-			if (contact && !contacts.some((existing) => existing.id === contact.id)) contacts.push(contact);
+			if (!contact || contacts.some((existing) => existing.id === contact.id)) continue;
+			// Only one owner: the first one marked.
+			if (contact.owner && contacts.some((existing) => existing.owner)) delete contact.owner;
+			contacts.push(contact);
 		}
 	}
 
@@ -212,14 +215,26 @@ export class SettingsStore {
 		return this.settings;
 	}
 
-	/** Applies a change, re-validates, saves and notifies listeners. */
+	/**
+	 * Applies a change, re-validates, saves and notifies listeners. Starts from
+	 * the file on disk, so a change made by another Pi process isn't overwritten.
+	 */
 	update(change: (draft: GlobalSettings) => void): Readonly<GlobalSettings> {
-		const draft = structuredClone(this.settings);
+		const draft = structuredClone(this.fromDisk() ?? this.settings);
 		change(draft);
 		this.settings = normalizeSettings(draft);
 		this.save();
 		for (const listener of this.listeners) listener(this.settings);
 		return this.settings;
+	}
+
+	/** The saved settings, or undefined when there is no readable file. */
+	private fromDisk(): GlobalSettings | undefined {
+		try {
+			return normalizeSettings(JSON.parse(readFileSync(this.filePath, "utf8")));
+		} catch {
+			return undefined;
+		}
 	}
 
 	onChange(listener: SettingsListener): () => void {

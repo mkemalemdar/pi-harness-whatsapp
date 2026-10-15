@@ -22,7 +22,7 @@ Talk to the [Pi coding agent](https://pi.dev) from WhatsApp: text, voice notes, 
 - Pi 1.2 or newer
 - `ffmpeg` on the PATH (for voice notes): `sudo apt install ffmpeg`
 - For voice notes: Linux (x64 or ARM64), Windows (x64) or macOS on Apple Silicon. OpenVINO has no build for Intel Macs or Windows on ARM; text works there, voice notes don't.
-- For voice notes: about 3.5 GB of free RAM while they're being processed, and 1.6 GB of disk
+- For voice notes: about 3.5 GB of free RAM while they're being processed, and 1.5 GB of disk
 
 ## Install
 
@@ -62,6 +62,7 @@ What Pi reacts to is set by **In groups, answer**: **replies and @mentions** (de
 - **Context:** when Pi is addressed, it also gets the last 20 messages written since it was last addressed, so "@Pi what do you think?" makes sense. Only text goes into that context; images, files and voice notes show up only as a note like `[sent an image]`. These messages are kept in memory only.
 - **Images:** send an image with a caption that @mentions Pi, or reply to someone's image and @mention Pi; Pi sees that image.
 - **Commands** (`/status`, `/model`, …) work in groups without a mention, with the same rules as in private chats: only the owner can change Pi by default. A number as a poll answer only counts in a group if it replies to the poll.
+- **Pi needs its own number for groups.** If Pi runs on your own number, your messages in a group are your own messages, and Pi ignores them there; the "Message yourself" chat still works.
 - **Be careful:** everyone in an allowed group can ask Pi things, and Pi can run commands on this machine. Only allow groups where you trust every member.
 
 ## Settings: `/whatsapp`
@@ -128,7 +129,7 @@ Supported languages: **English, Turkish, German, French, Spanish, Italian, Portu
 |---|---|---|
 | Understanding voice notes | Whisper large-v3-turbo, int8, [exported for OpenVINO by Intel](https://huggingface.co/OpenVINO/whisper-large-v3-turbo-int8-ov) | 828 MB |
 | Speaking replies | [Supertonic 3](https://huggingface.co/Supertone/supertonic-3) by Supertone (10 voices) | 401 MB |
-| Running both | Intel's OpenVINO for Node | 325 MB |
+| Running both | Intel's OpenVINO for Node | 202 MB |
 
 Everything downloads the first time it's needed, and the chat is told while it waits. If you change languages, voices or the reply type in `/whatsapp`, Pi asks when you close the panel whether to download the new files now. Models are unloaded after 10 minutes without voice work, so idle RAM use is zero. While voice notes are being handled, Pi used about 3.4 GB of RAM in total in the test below.
 
@@ -181,7 +182,7 @@ Everything lives in `~/.pi/agent/pi-harness-whatsapp/`:
 | `inbox/` | Files people sent (kept 7 days) |
 | `recents.json` | Recent chat ids and names, for picking contacts (no message text) |
 | `connection.lock` | Which Pi process holds the connection right now |
-| `log/pi-harness-whatsapp.log` | Log: connection events and errors, never message text |
+| `log/pi-harness-whatsapp.log` | Log: connection events and errors, no message text (unless debug logging is on) |
 
 ## Troubleshooting
 
@@ -189,8 +190,8 @@ Everything lives in `~/.pi/agent/pi-harness-whatsapp/`:
 - **"needs a new QR scan":** WhatsApp logged the device out (for example, it was removed from Linked devices). Connection → Show a new QR code.
 - **"in use by Pi #…":** another Pi holds the connection; turn WhatsApp off there.
 - **Messages are ignored:** the sender isn't in Allowed chats. Pi shows a notice in the terminal the first time.
-- **Voice notes fail:** check that `ffmpeg -version` works. The first voice note waits for the speech files to download (about 1.6 GB). On Intel Macs and Windows on ARM, voice notes aren't available.
-- **More detail:** set `PI_HARNESS_WHATSAPP_DEBUG=1` before starting Pi, and check the log.
+- **Voice notes fail:** check that `ffmpeg -version` works. The first voice note waits for the speech files to download (about 1.4 GB); a download that stalls for a minute is given up and tried again with the next voice note. On Intel Macs and Windows on ARM, voice notes aren't available.
+- **More detail:** set `PI_HARNESS_WHATSAPP_DEBUG=1` before starting Pi, and check the log. Debug logging also writes WhatsApp's own internal messages, which can contain message content, so turn it off again afterwards.
 
 ## Development
 

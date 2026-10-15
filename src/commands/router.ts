@@ -64,7 +64,8 @@ export class CommandRouter implements CommandHandler {
 			await this.env.queue.sendText(message.chatJid, "🔒 Only the owner can change Pi's settings from WhatsApp.");
 			return true;
 		}
-		log.info(`/${command.name}${parsed.args ? ` ${parsed.args}` : ""}`);
+		// Arguments can be message text (e.g. /compact instructions), which stays out of the log.
+		log.info(`/${command.name}`);
 		try {
 			const reply = await command.run(parsed.args, { chatJid: message.chatJid, message, mayChange }, this.env);
 			if (reply) await this.env.queue.sendText(message.chatJid, reply);

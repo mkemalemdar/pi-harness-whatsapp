@@ -93,6 +93,8 @@ export class WhatsAppConnection {
 	private wantRunning = false;
 	private showedQr = false;
 	private version: [number, number, number] | undefined;
+	/** Group names already asked from WhatsApp. */
+	private readonly groupNames = new Map<string, string>();
 
 	constructor(
 		private readonly authDir: string,
@@ -214,6 +216,22 @@ export class WhatsAppConnection {
 			{},
 			{ logger: createBaileysLogger("media"), reuploadRequest: socket.updateMediaMessage },
 		)) as Buffer;
+	}
+
+	/** A group's name, asked from WhatsApp once (it only sends names with the history at pairing). */
+	async groupName(jid: string): Promise<string | undefined> {
+		const known = this.groupNames.get(jid);
+		if (known) return known;
+		const socket = this.socket;
+		if (!socket || !this.isOpen()) return undefined;
+		try {
+			const subject = (await socket.groupMetadata(jid)).subject?.trim();
+			if (subject) this.groupNames.set(jid, subject);
+			return subject || undefined;
+		} catch (error) {
+			log.debug("group name lookup failed", error);
+			return undefined;
+		}
 	}
 
 	/** Phone JID for a LID JID, if WhatsApp has told us. */

@@ -145,6 +145,8 @@ export class Media implements MediaHandler {
 	private async audio(message: InboundMessage, makeHeader: (voiceTag?: string) => string, quoted: string): Promise<PreparedPrompt> {
 		void this.deps.connection.presence(message.chatJid, "composing");
 		try {
+			const problem = await this.deps.voice.unavailable();
+			if (problem) throw new Error(problem);
 			const missing = this.deps.voice.missingModels().filter((spec) => spec.kind === "stt" || spec.kind === "runtime");
 			if (missing.length > 0) {
 				const megabytes = missing.reduce((sum, spec) => sum + spec.approxMB, 0);
@@ -193,7 +195,9 @@ export class Media implements MediaHandler {
 			return;
 		}
 
-		const spoken = textForSpeech(text);
+		// Nothing to say when there are no letters or digits (e.g. an answer that is just "👍").
+		const prose = textForSpeech(text);
+		const spoken = /[\p{L}\p{N}]/u.test(prose) ? prose : "";
 		const parts = splitForSpeech(spoken, MAX_SPOKEN_CHARS);
 		const tooLong = parts.length > MAX_VOICE_PARTS;
 		// Text too only when the voice notes can't carry everything: code, or more than ~10 minutes.
@@ -210,6 +214,8 @@ export class Media implements MediaHandler {
 		if (tooLong) toSpeak[toSpeak.length - 1] += " … The rest is in the text message.";
 		void this.deps.connection.presence(chatJid, "recording");
 		try {
+			const problem = await this.deps.voice.unavailable();
+			if (problem) throw new Error(problem);
 			const missing = this.deps.voice.missingModels().filter((spec) => spec.kind === "tts" || spec.kind === "runtime");
 			if (missing.length > 0) {
 				const megabytes = missing.reduce((sum, spec) => sum + spec.approxMB, 0);

@@ -9,6 +9,7 @@ import { decodeToSamples, encodeVoiceNote } from "../src/voice/audio.ts";
 import { SpeechEngine } from "../src/voice/engine.ts";
 import { chooseSpeechLanguage, detectLanguage } from "../src/voice/language.ts";
 import { ModelStore, RUNTIME_SPEC, SUPERTONIC_SPEC, WHISPER_SPEC } from "../src/voice/models.ts";
+import { chunkText } from "../src/voice/supertonic.ts";
 import type { VoiceService } from "../src/voice/service.ts";
 import { SendQueue } from "../src/wa/outbound.ts";
 
@@ -32,6 +33,16 @@ describe("language choice", () => {
 	});
 });
 
+describe("chunkText", () => {
+	it("keeps sentences together and cuts over-long ones at commas or spaces", () => {
+		expect(chunkText("One. Two.\n\nThree.", 300)).toEqual(["One. Two.", "Three."]);
+		const chunks = chunkText(`${"alpha beta, ".repeat(60)}end`, 300);
+		expect(chunks.length).toBeGreaterThan(2);
+		expect(chunks.every((chunk) => chunk.length <= 300)).toBe(true);
+		expect(chunks.join(" ").replace(/\s+/g, " ")).toBe(`${"alpha beta, ".repeat(60)}end`.replace(/\s+/g, " "));
+	});
+});
+
 describe("safeFileName", () => {
 	it("strips folders and odd characters and keeps the extension", () => {
 		expect(safeFileName("../../etc/pass wd.pdf", ".bin")).toMatch(/^pass wd-[\dT-]+Z\.pdf$/);
@@ -49,6 +60,9 @@ class FakeVoice {
 		return { audio: Buffer.from("ogg"), seconds: 2 };
 	}
 	installed = true;
+	async unavailable(): Promise<string | undefined> {
+		return undefined;
+	}
 	missingModels() {
 		return this.installed ? [] : [SUPERTONIC_SPEC];
 	}
@@ -123,6 +137,22 @@ describe("Media.deliverReply", () => {
 		await media.deliverReply("c", "Tamam.", { voiceIn: true, language: "tr" });
 		expect((sent[0] as { text: string }).text).toBe(`⏳ Getting the voice ready (one-time download, ~${SUPERTONIC_SPEC.approxMB} MB)…`);
 		expect("audio" in sent[1]!).toBe(true);
+	});
+
+	it("sends text, not an empty voice note, when there is nothing to say", async () => {
+		await media.deliverReply("c", "👍", { voiceIn: true });
+		expect(kinds()).toEqual(["text"]);
+		expect(voice.spoken).toEqual([]);
+	});
+
+	it("says why, without a download notice, when voice can't work on this machine", async () => {
+		voice.installed = false;
+		voice.unavailable = async () => "ffmpeg is not installed (needed for voice notes)";
+		await media.deliverReply("c", "Tamam.", { voiceIn: true, language: "tr" });
+		expect(sent.map((content) => (content as { text: string }).text)).toEqual([
+			"Tamam.",
+			"(couldn't make a voice note: ffmpeg is not installed (needed for voice notes))",
+		]);
 	});
 
 	it("falls back to text when the voice note can't be made", async () => {

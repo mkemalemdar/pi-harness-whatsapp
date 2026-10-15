@@ -222,3 +222,20 @@ describe("RecentsStore", () => {
 		expect(store.list()).toEqual([]);
 	});
 });
+
+describe("isLoggedIn", () => {
+	it("counts a QR login (me set, registered false) as logged in", async () => {
+		const { isLoggedIn } = await import("../src/wa/connection.ts");
+		expect(isLoggedIn({ me: { id: "905550000000:12@s.whatsapp.net" } })).toBe(true);
+		expect(isLoggedIn({ me: undefined })).toBe(false);
+		expect(isLoggedIn(undefined)).toBe(false);
+	});
+
+	it("a normal drop after being connected reconnects instead of stopping", () => {
+		// What onClose now passes for a socket that was open: pairing = false.
+		expect(decideOnClose({ statusCode: CODES.connectionClosed, attempt: 0, pairing: false, random: () => 0.5 })).toEqual({
+			action: "reconnect",
+			delayMs: 5000,
+		});
+	});
+});

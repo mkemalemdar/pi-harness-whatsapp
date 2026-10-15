@@ -72,6 +72,11 @@ class SentStore {
 	}
 }
 
+/** True once WhatsApp has assigned this device to an account (set after a QR scan). */
+export function isLoggedIn(creds: { me?: { id?: string } | null } | undefined): boolean {
+	return !!creds?.me?.id;
+}
+
 const errorStatus = (error: unknown): number | undefined =>
 	(error as { output?: { statusCode?: number } } | undefined)?.output?.statusCode;
 
@@ -239,7 +244,9 @@ export class WhatsAppConnection {
 			});
 			this.socket = socket;
 			this.showedQr = false;
-			const pairing = !state.creds.registered;
+			// Not "registered": Baileys only sets that for pairing-code logins, never after a QR scan.
+			const loggedIn = isLoggedIn(state.creds);
+			let wasOpen = false;
 
 			socket.ev.on("creds.update", saveCreds);
 			socket.ev.on("connection.update", (update) => {
@@ -249,6 +256,7 @@ export class WhatsAppConnection {
 					this.setState({ kind: "qr", qr: update.qr });
 				}
 				if (update.connection === "open") {
+					wasOpen = true;
 					this.attempt = 0;
 					const user = socket.user;
 					const phone = jidUser(user?.id);
@@ -259,7 +267,9 @@ export class WhatsAppConnection {
 					});
 				}
 				if (update.connection === "close") {
-					this.onClose(errorStatus(update.lastDisconnect?.error), pairing || this.showedQr, update.lastDisconnect?.error);
+					// Only a socket that never logged in and showed a QR is "waiting for a scan".
+					const pairing = !wasOpen && (!loggedIn || this.showedQr);
+					this.onClose(errorStatus(update.lastDisconnect?.error), pairing, update.lastDisconnect?.error);
 				}
 			});
 			socket.ev.on("messages.upsert", ({ messages, type }) => {

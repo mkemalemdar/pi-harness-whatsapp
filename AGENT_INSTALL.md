@@ -1,6 +1,6 @@
-# Installing pi-harness-whatsapp: notes for AI agents
+# Installing (and uninstalling) pi-harness-whatsapp: notes for AI agents
 
-This file is for an AI agent (Pi, Claude Code, Codex, …) asked to install this extension for a user. Read it fully before changing anything.
+This file is for an AI agent (Pi, Claude Code, Codex, …) asked to install or remove this extension for a user. Read it fully before changing anything. **Asked to remove it?** Go to [Uninstalling](#uninstalling).
 
 ## What you can and can't do
 
@@ -120,10 +120,13 @@ Tell the user:
 
 Then tell them, briefly:
 
-- Anything that isn't a command goes to Pi as a prompt. Voice notes, images and files work too.
+- Anything that isn't a command goes to Pi as a prompt. Voice notes, images and files work too: Pi sees images, gets files saved for it to open, and can send images and files back when asked ("send me the screenshot").
+- To remove it later, the README's **Uninstall** section has the steps (in Pi: `/whatsapp` → Connection → Remove everything, then `pi uninstall`).
 - If they want Pi in a group: add the bot's number to the group, have someone write there, then allow it in `/whatsapp` → Allowed chats → Pick from recent chats. In the group, people @mention Pi or reply to its messages; Pi also sees the last 20 text messages before that for context. You can't allow a group for them in advance, because the group's id is only known once it appears in recent chats. Remind them that every member of an allowed group can prompt Pi.
 - From WhatsApp they can switch the model (`/model`), the reasoning level (`/think`), compact (`/compact`), stop a run (`/stop`), start a new session (`/new`) and change the reply type, language, speed and extras (`/voice`, `/lang`, `/speed`, `/replies`). Menus come as polls: tap an option.
 - Everything else, including on/off, allowed chats and voices, is in `/whatsapp` in the terminal.
+
+Finally, tell the user **everything you set up outside Pi**, so it can be removed later: for example "installed ffmpeg with apt", "created `~/.config/systemd/user/pi-whatsapp.service` and enabled lingering". If you have a memory or notes file for this user, write it there too.
 
 ## Check it worked
 
@@ -138,6 +141,58 @@ Then tell them, briefly:
 - Don't set `commandAccess` to `allowed` unless the user asks.
 - Don't install the systemd service, or enable it at boot, without the user's yes.
 - Don't publish, fork or re-upload this package on the user's behalf.
+- Don't edit or delete Pi's session files (`~/.pi/agent/sessions/`), not even to remove WhatsApp traces; see [Uninstalling](#uninstalling).
+- When uninstalling, don't delete more than the steps say: no whole `PI_HARNESS_WHATSAPP_DIR` folder that holds other files, and no ffmpeg, tmux or npm cache without the user's yes.
+
+## Uninstalling
+
+Goal: **nothing left behind** on the user's computer, and Pi unlinked from their phone. Follow these steps in order. Don't improvise extra deletions.
+
+### What the extension leaves on a computer
+
+| What | Where | Removed by |
+|---|---|---|
+| The code | Pi's package folder, plus an entry in `~/.pi/agent/settings.json` | `pi uninstall` |
+| All its data: WhatsApp login (`auth/`), speech files (`models/`, ~1.5 GB), settings (`config.json`), recent chats, received files (`inbox/`), log (`log/`), lock | `~/.pi/agent/pi-harness-whatsapp/` (or `$PI_HARNESS_WHATSAPP_DIR` if set; or `$PI_CODING_AGENT_DIR/pi-harness-whatsapp/` if that is set) | "Remove everything", or deleting the folder |
+| The linked device on the phone | WhatsApp → Settings → Linked devices | "Remove everything", or the user on their phone |
+| A background service, only if one was set up | a systemd unit (usually `~/.config/systemd/user/*.service` or `/etc/systemd/system/*.service`), maybe lingering and a tmux session | you, step 3 |
+| Programs installed for it, only if they were | `ffmpeg`, `tmux` | only with the user's yes, step 6 |
+
+The extension writes nowhere else. It never edits shell profiles or creates files outside its data folder.
+
+### Steps
+
+1. **Look first, change nothing yet.**
+   - `pi list`: note the exact source (`npm:pi-harness-whatsapp`, or a `git:` source).
+   - The data folder: check `PI_HARNESS_WHATSAPP_DIR` and `PI_CODING_AGENT_DIR` in the environment; otherwise it's `~/.pi/agent/pi-harness-whatsapp/`.
+   - A service: `grep -rlE "pi-harness-whatsapp|PI_HARNESS_WHATSAPP|--whatsapp" ~/.config/systemd/user /etc/systemd/system 2>/dev/null`.
+   - Whether ffmpeg or tmux were installed just for this: check your notes, or ask the user.
+2. **Tell the user what will be removed and get a yes.** The WhatsApp login is deleted, so using it again means a new QR scan; the speech files would have to download again.
+3. **Stop the service, if there is one** (so it can't start Pi again): `systemctl --user disable --now <unit>` (system unit: `sudo systemctl disable --now <unit>`). Delete its unit file, then run `systemctl --user daemon-reload` (or `sudo systemctl daemon-reload`). Kill its tmux session if it's still there (`tmux ls`, then `tmux kill-session -t <name>`). If lingering was turned on only for this service (your notes, or ask), run `loginctl disable-linger`.
+4. **Clean up the data, preferably from inside Pi.** You can't use the `/whatsapp` panel yourself, so ask the user to:
+   1. close every Pi window but one,
+   2. run `/whatsapp` → **Connection** → **Remove everything (before uninstalling)…** and confirm (it unlinks the phone and deletes the data folder),
+   3. quit Pi.
+
+   If the user can't, or the extension is already uninstalled: make sure no Pi is running (the user quits them all; `connection.lock` in the data folder shows the pid of a Pi that holds WhatsApp), then delete the data folder: `rm -rf ~/.pi/agent/pi-harness-whatsapp`. **If `PI_HARNESS_WHATSAPP_DIR` points at a folder that also holds other things, delete only these entries in it:** `config.json*`, `recents.json*`, `auth/`, `models/`, `inbox/`, `log/`, `connection.lock`, `announce.json`. Then tell the user to unlink Pi on their phone: WhatsApp → Settings → Linked devices → tap the device that belongs to Pi → Log out.
+5. **Remove the code:** `pi uninstall <source from step 1>`, with Pi not running. npm leaves some empty folders behind (e.g. `@types`); remove only empty ones:
+   `find ~/.pi/agent/npm/node_modules ~/.pi/agent/git -mindepth 1 -type d -empty -delete 2>/dev/null`. Don't touch anything else in those folders; other Pi packages live there.
+6. **Programs:** only if ffmpeg or tmux were installed just for this and the user says yes, remove them with the package manager (e.g. `sudo apt remove ffmpeg tmux`). Other programs may need them; never remove them on your own.
+7. **Verify, and show the user the output.** All of these must come back empty (or "No such file or directory"):
+   ```bash
+   pi list | grep -i whatsapp
+   ls -a ~/.pi/agent/pi-harness-whatsapp
+   find ~/.pi ~/.config/systemd /etc/systemd -iname "*pi-harness-whatsapp*" 2>/dev/null
+   find ~/.pi/agent/npm/node_modules ~/.pi/agent/git -mindepth 1 -type d -empty 2>/dev/null
+   grep -rlE "pi-harness-whatsapp|PI_HARNESS_WHATSAPP" ~/.config/systemd /etc/systemd ~/.bashrc ~/.profile ~/.zshrc 2>/dev/null
+   ```
+8. **Report** what you removed, and what stays on purpose (below).
+
+### What stays, on purpose; don't delete it
+
+- **Pi's sessions** (`~/.pi/agent/sessions/`). Conversations with Pi from WhatsApp are normal Pi sessions and contain small `pi-harness-whatsapp/session` entries (WhatsApp on/off). Pi ignores them without the extension. **Never edit session files**: entries are linked to each other, and cutting some out breaks the session. If the user wants those conversations gone, they delete whole sessions in Pi.
+- **npm's cache** (`~/.npm/_cacache`) holds a copy of every package npm downloaded. Only if the user asks: `npm cache clean --force` (it empties the whole cache).
+- **The chat on the phone** with Pi's number. That's the user's WhatsApp data, not this computer's.
 
 ## Troubleshooting
 

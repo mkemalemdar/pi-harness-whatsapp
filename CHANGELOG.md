@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1 — 2026-10-15
+
+- **Uninstall without leftovers:** `/whatsapp` → Connection → **Remove everything (before uninstalling)** unlinks Pi from the phone (connecting first if needed), stops running downloads, deletes every file the extension made, and keeps Pi from writing any more until it quits. It refuses while another Pi holds WhatsApp. The README and AGENT_INSTALL describe the full uninstall, the background service and how to check nothing is left.
+- A Pi that never turned WhatsApp on no longer creates a log or recent-chats file when it quits.
+- README: a section on sending and receiving images and files.
+- The examples in Pi's instructions for spoken replies are in English.
+
 ## 0.1.0 — 2026-10-15
 
 First release.

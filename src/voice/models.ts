@@ -22,6 +22,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { createLogger } from "../log.ts";
+import { isRemoved } from "../removed.ts";
 
 const log = createLogger("models");
 const DONE_MARKER = ".complete";
@@ -104,6 +105,8 @@ export type ProgressListener = (spec: ModelSpec, fraction: number | undefined) =
 
 export class ModelStore {
 	private readonly inFlight = new Map<string, Promise<string>>();
+	/** Aborts every running download (see cancelDownloads). */
+	private cancel = new AbortController();
 
 	constructor(
 		private readonly root: string,
@@ -122,12 +125,20 @@ export class ModelStore {
 
 	/** Downloads and unpacks unless it's already there. Concurrent calls share one download. */
 	ensure(spec: ModelSpec): Promise<string> {
+		if (isRemoved()) return Promise.reject(new Error("the WhatsApp extension's files were removed"));
 		if (this.isInstalled(spec)) return Promise.resolve(this.dir(spec));
 		const running = this.inFlight.get(spec.name);
 		if (running) return running;
 		const job = (spec.kind === "runtime" ? this.installRuntime(spec) : this.install(spec)).finally(() => this.inFlight.delete(spec.name));
 		this.inFlight.set(spec.name, job);
 		return job;
+	}
+
+	/** Stops all running downloads and waits until they have let go of their files. */
+	async cancelDownloads(): Promise<void> {
+		this.cancel.abort();
+		await Promise.allSettled([...this.inFlight.values()]);
+		this.cancel = new AbortController();
 	}
 
 	isDownloading(spec: ModelSpec): boolean {
@@ -259,6 +270,7 @@ export class ModelStore {
 				await this.fetchOnce(spec, url, target, onBytes);
 				return;
 			} catch (error) {
+				if (this.cancel.signal.aborted) throw new Error(`download of ${spec.name} cancelled`);
 				if ((error as { permanent?: boolean }).permanent || attempt >= DOWNLOAD_ATTEMPTS) throw error;
 				log.warn(`download of ${spec.name} interrupted, trying again (${attempt}/${DOWNLOAD_ATTEMPTS - 1})`, error);
 				await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
@@ -278,7 +290,7 @@ export class ModelStore {
 		try {
 			const response = await fetch(url, {
 				redirect: "follow",
-				signal: abort.signal,
+				signal: AbortSignal.any([abort.signal, this.cancel.signal]),
 				...(have > 0 ? { headers: { Range: `bytes=${have}-` } } : {}),
 			});
 			if (response.status === 416) {

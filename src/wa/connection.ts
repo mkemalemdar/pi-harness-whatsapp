@@ -4,7 +4,8 @@
  * talks to Baileys' socket directly, so a Baileys upgrade stays contained.
  */
 
-import { rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import makeWASocket, {
 	type AnyMessageContent,
 	Browsers,
@@ -19,6 +20,7 @@ import makeWASocket, {
 	type WASocket,
 } from "baileys";
 import { createBaileysLogger, createLogger } from "../log.ts";
+import { isRemoved } from "../removed.ts";
 import { isIgnoredJid, jidUser, normalizeJid } from "./jid.ts";
 import { installConsoleGuard } from "./console-guard.ts";
 import { ConnectionLock, type LockHolder } from "./lock.ts";
@@ -128,6 +130,7 @@ export class WhatsAppConnection {
 	async start(): Promise<void> {
 		// libsignal prints session internals to the console, which breaks Pi's screen.
 		installConsoleGuard();
+		if (isRemoved()) return;
 		this.wantRunning = true;
 		if (this.socket || this.reconnectTimer) return;
 		const lock = this.lock.acquire();
@@ -150,17 +153,22 @@ export class WhatsAppConnection {
 		this.clearTimer();
 		this.closeSocket();
 		this.lock.release();
-		this.setState({ kind: "stopped" });
+		if (this.state.kind !== "stopped") this.setState({ kind: "stopped" });
 	}
 
-	/** Unlinks this device on the phone and forgets the saved login. */
-	async logout(): Promise<void> {
+	/** Unlinks this device on the phone and forgets the saved login. Returns whether WhatsApp confirmed the unlink. */
+	async logout(): Promise<boolean> {
 		this.wantRunning = false;
 		this.clearTimer();
 		const socket = this.socket;
-		if (socket) {
+		let unlinked = false;
+		if (socket && this.state.kind === "open") {
 			try {
-				await socket.logout();
+				await Promise.race([
+					socket.logout(),
+					new Promise((_resolve, reject) => setTimeout(() => reject(new Error("no answer from WhatsApp")), 10_000).unref?.()),
+				]);
+				unlinked = true;
 			} catch (error) {
 				log.warn("logout failed (continuing)", error);
 			}
@@ -169,6 +177,48 @@ export class WhatsAppConnection {
 		this.forgetLogin();
 		this.lock.release();
 		this.setState({ kind: "stopped" });
+		return unlinked;
+	}
+
+	/** Another running Pi holds the connection (and uses the saved login). */
+	heldElsewhere(): LockHolder | undefined {
+		return this.lock.otherHolder();
+	}
+
+	/** A login is saved on disk (a QR code was scanned and not logged out since). */
+	hasSavedLogin(): boolean {
+		try {
+			const file = join(this.authDir, "creds.json");
+			return existsSync(file) && isLoggedIn(JSON.parse(readFileSync(file, "utf8")) as { me?: { id?: string } });
+		} catch {
+			return false;
+		}
+	}
+
+	/**
+	 * Unlinks Pi from the phone, connecting first if needed, and forgets the login.
+	 * "not-linked": there was no valid login; "failed": WhatsApp couldn't be reached.
+	 */
+	async unlinkPhone(timeoutMs = 30_000): Promise<"unlinked" | "not-linked" | "failed"> {
+		if (!this.hasSavedLogin()) {
+			await this.stop();
+			this.forgetLogin();
+			return "not-linked";
+		}
+		if (this.state.kind !== "open") {
+			await this.stop();
+			await this.start();
+			const until = Date.now() + timeoutMs;
+			const settled = () => ["open", "qr", "needs-pairing", "failed", "locked"].includes(this.state.kind);
+			while (!settled() && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 250));
+		}
+		const kind = this.state.kind;
+		if (kind === "open") return (await this.logout()) ? "unlinked" : "failed";
+		// A QR code or "needs pairing": WhatsApp no longer accepts this login, so nothing is linked.
+		const result = kind === "qr" || kind === "needs-pairing" ? "not-linked" : "failed";
+		await this.stop();
+		this.forgetLogin();
+		return result;
 	}
 
 	/** Forgets the saved login and starts again, which shows a new QR code. */

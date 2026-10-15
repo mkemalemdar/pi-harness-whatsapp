@@ -6,6 +6,7 @@
 import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { paths } from "./paths.ts";
+import { isRemoved } from "./removed.ts";
 
 type Level = "debug" | "info" | "warn" | "error";
 const LEVELS: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40 };
@@ -36,7 +37,7 @@ function serialize(value: unknown): string {
 }
 
 function write(level: Level, scope: string, parts: unknown[]): void {
-	if (LEVELS[level] < LEVELS[minLevel]) return;
+	if (LEVELS[level] < LEVELS[minLevel] || isRemoved()) return;
 	try {
 		mkdirSync(paths.logs(), { recursive: true });
 		const target = file();

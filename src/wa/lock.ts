@@ -97,6 +97,13 @@ export class ConnectionLock {
 		return holder ? { ok: false, holder } : { ok: false, holder: { pid: -1, host: "?", since: 0 } };
 	}
 
+	/** The live Pi process (not this one) that holds the lock, if any. */
+	otherHolder(): LockHolder | undefined {
+		const holder = readHolder(this.file);
+		if (!holder || (holder.pid === this.pid && holder.host === hostname())) return undefined;
+		return holder.host !== hostname() || holds(holder) ? holder : undefined;
+	}
+
 	release(): void {
 		if (!this.held) return;
 		this.held = false;

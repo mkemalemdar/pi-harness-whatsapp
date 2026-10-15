@@ -7,6 +7,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { RecentChat } from "../contacts-flow.ts";
+import { isRemoved } from "../removed.ts";
 import { isGroupJid, isIgnoredJid, isLidJid, isPhoneJid, jidUser, normalizeJid } from "./jid.ts";
 
 const MAX_CHATS = 200;
@@ -24,6 +25,8 @@ export class RecentsStore {
 	/** LID digits → phone digits. */
 	private readonly lidToPhone = new Map<string, string>();
 	private saveTimer: ReturnType<typeof setTimeout> | undefined;
+	/** Something changed since the last save. */
+	private dirty = false;
 
 	constructor(private readonly file: string) {}
 
@@ -92,6 +95,9 @@ export class RecentsStore {
 	flush(): void {
 		if (this.saveTimer) clearTimeout(this.saveTimer);
 		this.saveTimer = undefined;
+		// Nothing new: don't write (a Pi that never used WhatsApp leaves no file behind).
+		if (!this.dirty || isRemoved()) return;
+		this.dirty = false;
 		try {
 			mkdirSync(dirname(this.file), { recursive: true });
 			const temporary = `${this.file}.${process.pid}.tmp`;
@@ -126,6 +132,7 @@ export class RecentsStore {
 	}
 
 	private scheduleSave(): void {
+		this.dirty = true;
 		if (this.saveTimer) return;
 		this.saveTimer = setTimeout(() => this.flush(), 2000);
 		this.saveTimer.unref?.();

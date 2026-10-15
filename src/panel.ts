@@ -25,7 +25,7 @@ import {
 import { groupMarker, InputStep, ListMenu, type MenuItem, MenuStack } from "./panel-components.ts";
 import { clampSpeed, MAX_SPEED, MIN_SPEED, type SettingsStore } from "./settings.ts";
 
-export type PanelAction = "contacts" | "qr";
+export type PanelAction = "contacts" | "qr" | "remove";
 
 export interface SpeechFile {
 	name: string;
@@ -93,7 +93,7 @@ export function showPanel(ctx: ExtensionContext, host: PanelHost, focus?: string
 			render();
 		};
 		const stack = new MenuStack(() => finish(undefined), refreshValues);
-		const base = { host, theme, stack, render, refreshValues: () => refreshValues() };
+		const base = { host, theme, stack, render, refreshValues: () => refreshValues(), finish: (action: PanelAction) => finish(action) };
 
 		const main: ListMenu = new ListMenu(theme, {
 			title: "WhatsApp settings",
@@ -149,6 +149,8 @@ interface SubmenuContext {
 	stack: MenuStack;
 	render(): void;
 	refreshValues(): void;
+	/** Closes the panel with a follow-up action. */
+	finish(action: PanelAction): void;
 }
 
 function openSubmenu(row: PanelRow, context: SubmenuContext): Component {
@@ -564,6 +566,11 @@ function connectionMenu(row: PanelRow, context: SubmenuContext): Component {
 			label: "Log out (unlink this device)",
 			description: "Removes Pi from the phone's Linked devices. You'll need to scan a QR code again.",
 		},
+		{
+			id: "remove",
+			label: "Remove everything (before uninstalling)…",
+			description: "Unlinks Pi from your phone and deletes the login, speech files, settings, log and received files. Asks first.",
+		},
 		{ id: "log", label: `Log file: ${host.logFile()}`, disabled: true },
 	];
 	return new ListMenu(theme, {
@@ -572,7 +579,9 @@ function connectionMenu(row: PanelRow, context: SubmenuContext): Component {
 		items,
 		onCancel: () => stack.pop(),
 		onSelect: (item) => {
-			if (item.id === "connect") {
+			if (item.id === "remove") {
+				context.finish("remove");
+			} else if (item.id === "connect") {
 				void host.connectionCommand("connect").finally(render);
 				stack.home();
 			} else if (item.id === "repair") {

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -68,6 +68,32 @@ describe("ModelStore downloads", () => {
 		expect(hub.ranges[1]).toMatch(/^bytes=[1-9]\d*-$/);
 		expect(store.isInstalled(SPEC)).toBe(true);
 		expect(existsSync(join(folder, "README.md"))).toBe(false);
+	}, 20_000);
+
+	it("cancels a running download and lets go of its files", async () => {
+		const hub = fakeHub({});
+		// Answer the file request slowly, a few bytes at a time.
+		hub.server.removeAllListeners("request");
+		hub.server.on("request", (request, response) => {
+			if (request.url?.startsWith("/api/models/")) {
+				response.end(JSON.stringify([{ type: "file", path: "model.bin", size: DATA.length }]));
+				return;
+			}
+			response.writeHead(200, { "content-length": String(DATA.length) });
+			const timer = setInterval(() => response.write(DATA.subarray(0, 10)), 50);
+			response.on("close", () => clearInterval(timer));
+		});
+		const store = await start(hub);
+		const download = store.ensure(SPEC);
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		expect(store.isDownloading(SPEC)).toBe(true);
+		const started = Date.now();
+		await store.cancelDownloads();
+		await expect(download).rejects.toThrow(/cancelled/);
+		expect(Date.now() - started).toBeLessThan(2000);
+		expect(store.isDownloading(SPEC)).toBe(false);
+		store.remove(SPEC);
+		expect(readdirSync(dir)).toEqual([]);
 	}, 20_000);
 
 	it("rejects a file whose checksum doesn't match, and doesn't retry a missing file", async () => {

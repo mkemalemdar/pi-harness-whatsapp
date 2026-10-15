@@ -16,7 +16,9 @@ import { cleanInbox, Media } from "./media.ts";
 import type { SpeechInfo } from "./panel-model.ts";
 import { getLanguage } from "./languages.ts";
 import { type ConnectionCommand, type PanelHost, type SpeechFile, showPanel } from "./panel.ts";
-import { paths } from "./paths.ts";
+import { dataDir, paths, removeDataDir } from "./paths.ts";
+import { isRemoved, markRemoved } from "./removed.ts";
+import { detectService } from "./commands/power.ts";
 import {
 	restoreSessionState,
 	SESSION_ENTRY_TYPE,
@@ -35,6 +37,8 @@ export const STATUS_KEY = "whatsapp";
 /** Hidden argument of /whatsapp; dispatching it gives a real command context for ctx.newSession(). */
 export const NEW_SESSION_ARG = "__new-session";
 const QR_WIDGET_KEY = "whatsapp-qr";
+const UNINSTALL_HINT = "quit Pi and run `pi uninstall npm:pi-harness-whatsapp` (or the source `pi list` shows).";
+const REMOVED_STATUS = "WA: removed · quit Pi and run pi uninstall npm:pi-harness-whatsapp";
 const log = createLogger("controller");
 
 /** Renders a QR code as terminal lines. */
@@ -108,6 +112,12 @@ export class Controller implements PanelHost, CommandEnv {
 	/** Restores this session's state and applies it. */
 	async onSessionStart(event: SessionStartEvent, ctx: ExtensionContext): Promise<void> {
 		this.ctx = ctx;
+		if (isRemoved()) {
+			// "Remove everything" ran in this Pi: stay inert until the package is uninstalled.
+			this.onToolsChanged?.(false);
+			ctx.ui.setStatus(STATUS_KEY, REMOVED_STATUS);
+			return;
+		}
 		const settings = this.settings.load();
 		this.recents.load();
 		cleanInbox(paths.inbox());
@@ -158,7 +168,7 @@ export class Controller implements PanelHost, CommandEnv {
 
 	/** Turns WhatsApp on or off for this session and remembers it. */
 	async setEnabled(on: boolean): Promise<void> {
-		if (this.session.enabled === on) return;
+		if (this.session.enabled === on || isRemoved()) return;
 		this.session = { ...this.session, enabled: on };
 		this.persistSession();
 		this.settings.update((draft) => {
@@ -209,6 +219,10 @@ export class Controller implements PanelHost, CommandEnv {
 	/** /whatsapp: the settings panel; reopened after the "Allowed chats" dialogs. */
 	async openSettings(ctx: ExtensionContext): Promise<void> {
 		this.ctx = ctx;
+		if (isRemoved()) {
+			ctx.ui.notify(`WhatsApp's files were removed. ${UNINSTALL_HINT}`, "info");
+			return;
+		}
 		if (ctx.mode !== "tui") {
 			ctx.ui.notify("The WhatsApp settings panel needs the interactive terminal.", "error");
 			return;
@@ -220,6 +234,10 @@ export class Controller implements PanelHost, CommandEnv {
 			this.renderStatus();
 			// The QR code appeared: the panel closed so it's visible; don't cover it with dialogs.
 			if (action === "qr") return;
+			if (action === "remove") {
+				await this.removeEverything(ctx);
+				return;
+			}
 			if (action === "contacts") {
 				await contactsFlow(ctx, this.settings, () => this.recentChats());
 				focus = "contacts";
@@ -244,6 +262,61 @@ export class Controller implements PanelHost, CommandEnv {
 				void this.voice.models.ensure(spec).catch((error) => log.warn(`download of ${spec.name} failed`, error));
 			}
 		}
+	}
+
+	/**
+	 * "Remove everything", the step before `pi uninstall`: unlinks Pi from the
+	 * phone, stops everything, and deletes every file the extension made. After
+	 * this, the extension writes nothing more in this Pi process.
+	 */
+	async removeEverything(ctx: ExtensionContext): Promise<void> {
+		const holder = this.connection.heldElsewhere();
+		if (holder) {
+			ctx.ui.notify(`Another Pi (pid ${holder.pid}) is using WhatsApp. Quit that Pi first, then try again here.`, "error");
+			return;
+		}
+		const dir = dataDir();
+		const service = detectService();
+		const yes = await ctx.ui.confirm(
+			"Remove everything?",
+			[
+				"This can't be undone. It:",
+				"• unlinks Pi from your phone (WhatsApp → Linked devices)",
+				`• deletes ${dir}: the WhatsApp login, speech files, settings, allowed chats, recent chats, log and received files`,
+				"",
+				"Close any other Pi windows first, so they can't write files again.",
+				...(service ? [`Pi runs as the systemd service "${service.name}": stop and disable it right after this, or it starts Pi again.`] : []),
+				`Afterwards: ${UNINSTALL_HINT}`,
+			].join("\n"),
+		);
+		if (!yes) return;
+		ctx.ui.notify("WhatsApp: unlinking from the phone and deleting files…", "info");
+
+		const unlink = await this.connection.unlinkPhone();
+		this.queue.close();
+		this.bridge.reset();
+		await this.connection.stop();
+		await this.voice.models.cancelDownloads();
+		await this.voice.shutdown();
+		// From here on nothing writes files (log, settings, recent chats, login, speech files).
+		markRemoved();
+		this.session = { enabled: false, autoCompact: true };
+		this.onToolsChanged?.(false);
+		ctx.ui.setWidget(QR_WIDGET_KEY, undefined);
+		const left = removeDataDir(dir);
+		ctx.ui.setStatus(STATUS_KEY, REMOVED_STATUS);
+
+		const lines = [
+			unlink === "unlinked"
+				? "✓ Unlinked from your phone."
+				: unlink === "not-linked"
+					? "✓ No WhatsApp login was linked."
+					: "⚠ Couldn't reach WhatsApp to unlink: on your phone, remove Pi under WhatsApp → Settings → Linked devices.",
+			left.length === 0 ? `✓ Deleted ${dir}.` : `⚠ Couldn't delete: ${left.join(", ")}. Quit Pi and delete it by hand.`,
+			...(service ? [`Stop the service: systemctl ${service.scope.join(" ")} disable --now ${service.name}`.replace(/\s+/g, " ")] : []),
+			`Last step: ${UNINSTALL_HINT}`,
+		];
+		ctx.ui.notify(`WhatsApp removed.\n${lines.join("\n")}`, left.length === 0 && unlink !== "failed" ? "info" : "warning");
 	}
 
 	// ── PanelHost: things the panel's submenus do ──────────────────────────

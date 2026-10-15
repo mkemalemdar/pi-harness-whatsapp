@@ -1,6 +1,6 @@
 {
   "name": "pi-harness-whatsapp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Talk to the Pi coding agent from WhatsApp: QR pairing, automatic replies, voice notes in and out (local Whisper + Supertonic on OpenVINO), group chats, poll menus to control Pi.",
   "type": "module",
   "license": "MIT",

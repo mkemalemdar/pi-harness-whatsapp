@@ -6,12 +6,13 @@
 
 Talk to the [Pi coding agent](https://pi.dev) from WhatsApp: text, voice notes, images and files. Pi answers automatically, and you can switch models, compact the context or stop a run from your phone.
 
-> 🤖 **AI agent installing this for someone?** Read [AGENT_INSTALL.md](AGENT_INSTALL.md) first: what to ask the user, how to configure, and what never to touch.
+> 🤖 **AI agent installing or removing this for someone?** Read [AGENT_INSTALL.md](AGENT_INSTALL.md) first: what to ask the user, how to configure, how to uninstall without leaving anything behind, and what never to touch.
 
 - **Scan a QR code once and you're in.** Pi runs as a linked device of a WhatsApp number. The login is saved, and Pi reconnects on its own.
 - **Replies are automatic.** Pi's final answer is always sent back. The model doesn't have to call a tool.
 - **You choose what else you get:** a summary line (`✅ 4/6 tool calls ok · ⏱ 2m 14s`), in-between messages, the list of touched files, and a live tool-activity message.
 - **Voice notes both ways, on your own CPU.** [Whisper](https://github.com/openai/whisper) turbo understands them and [Supertonic 3](https://huggingface.co/Supertone/supertonic-3) speaks the replies, both through Intel's [OpenVINO](https://github.com/openvinotoolkit/openvino). No GPU or cloud service needed, in 15 languages.
+- **Images and files both ways.** Send Pi a photo or screenshot and it sees it; send a file (PDF, log, zip, …) and it's saved for Pi to open. Ask Pi for an image or a file and it sends it to your chat, and screenshots its tools take can come automatically.
 - **Control Pi from WhatsApp** with commands and poll menus: `/model`, `/think`, `/compact`, `/stop`, `/new`, `/status`, …
 - **A real off switch.** Off means disconnected: nothing is read or sent, and the WhatsApp tools disappear from the model.
 
@@ -72,7 +73,7 @@ Every row opens a small menu with the choices and a short explanation. Nothing c
 | Section | Setting | Choices and what it does |
 |---|---|---|
 | Connection | WhatsApp (this session) | On · **Off**. Continued sessions get their own value back; new sessions start with the last value you chose. |
-| | Connection | Connect now, show a new QR code (pair again), or log out. |
+| | Connection | Connect now, show a new QR code (pair again), log out, or remove everything before uninstalling (see [Uninstall](#uninstall)). |
 | | Allowed chats | People and groups that can talk to Pi. ★ marks the owner. Pick from recent chats, add a number by hand, rename, remove, or make someone the owner. |
 | | In groups, answer | **Replies and @mentions** · replies to Pi · @mentions only · every message. See [Groups](#groups). |
 | | Who can use commands | **Only me** (the owner) · all allowed chats. |
@@ -153,18 +154,23 @@ Measured on an Intel i5-13500, CPU only, on real recordings from Google's [FLEUR
 | Swedish | 12 % | 2.9 s | ✓ |
 | Hindi | 31 % | 3.2 s | 1 word off |
 
-Supertonic makes speech about 10× faster than real time, so a 20-second reply is ready in about 2 seconds. Symbols and units are hard for any voice to read ("13°C" is not "13 derece"), so when a reply will be spoken, Pi is told to write everything out as it should be said.
+Supertonic makes speech about 10× faster than real time, so a 20-second reply is ready in about 2 seconds. Symbols and units are hard for any voice to read ("13°C" is not "13 degrees"), so when a reply will be spoken, Pi is told to write everything out as it should be said.
 
-Received files are saved in `~/.pi/agent/pi-harness-whatsapp/inbox/` (kept for 7 days), and Pi is told where they are.
+## Images and files
 
-## Tools for the model
+**To Pi:**
+- **Images** (photos, screenshots) go to the model with their caption, so you can ask "what's wrong in this screenshot?". In a group, an image counts when its caption @mentions Pi, or when you reply to an image and @mention Pi.
+- **Files** (PDFs, documents, logs, archives, videos; up to 50 MB) are saved in `~/.pi/agent/pi-harness-whatsapp/inbox/`, and Pi is told the name, type, size and where it is, so it can open it with its own tools. Received files are deleted after 7 days.
+- **Voice notes** are transcribed; see [Voice](#voice).
 
-These are optional; normal replies never need them. They are visible to the model only while WhatsApp is on, and they only send to allowed contacts.
+**From Pi:** ask for it ("send me the screenshot", "send me report.pdf") and Pi sends images and files from this computer to your chat, up to 60 MB. With **Auto-send tool images** on, every image a tool makes while answering you (e.g. a browser screenshot) is sent without asking.
 
-- `whatsapp_send_image(path, caption?, to?)`
-- `whatsapp_send_file(path, caption?, to?)`
+Pi does this with two tools that the model sees only while WhatsApp is on, and that send only to allowed chats:
 
-There's no voice tool on purpose: when your reply is spoken, Pi's answer itself becomes the voice note, so the model can't send the same thing twice.
+- `whatsapp_send_image(path, caption?, to?)`: a PNG, JPEG, WebP or GIF, shown as a photo
+- `whatsapp_send_file(path, caption?, to?)`: any file, sent as a document
+
+`to` is an allowed contact's name or number; without it, Pi sends to the chat it's answering (or the owner). Normal replies never need these tools. There's no voice tool on purpose: when your reply is spoken, Pi's answer itself becomes the voice note, so the model can't send the same thing twice.
 
 ## Run in the background
 
@@ -182,7 +188,48 @@ Everything lives in `~/.pi/agent/pi-harness-whatsapp/`:
 | `inbox/` | Files people sent (kept 7 days) |
 | `recents.json` | Recent chat ids and names, for picking contacts (no message text) |
 | `connection.lock` | Which Pi process holds the connection right now |
-| `log/pi-harness-whatsapp.log` | Log: connection events and errors, no message text (unless debug logging is on) |
+| `announce.json` | For a moment around `/new` and `/restart`: which chat to tell that Pi is back |
+| `log/pi-harness-whatsapp.log` | Log: connection events and errors, no message text (unless debug logging is on). Rotated at 5 MB into `.log.1`. |
+
+If you set `PI_HARNESS_WHATSAPP_DIR`, everything is in that folder instead. The extension writes nothing anywhere else, apart from Pi's own files (your sessions and its package list).
+
+## Uninstall
+
+Do it in this order, so nothing is left behind.
+
+1. **Clean up from inside Pi.** Close every other Pi window first. Then run `/whatsapp` → **Connection** → **Remove everything (before uninstalling)…** and confirm. Pi:
+   - unlinks itself from your phone (WhatsApp → Settings → Linked devices),
+   - stops any speech-file download that's still running,
+   - deletes `~/.pi/agent/pi-harness-whatsapp/` with everything in it: the WhatsApp login, speech files, settings, allowed chats, recent chats, log and received files,
+   - and writes nothing more until you quit, even if you keep using Pi.
+2. **If Pi runs as a background service, stop and remove it now** (see below); otherwise systemd starts Pi again.
+3. **Quit Pi and remove the code:**
+   ```bash
+   pi uninstall npm:pi-harness-whatsapp
+   ```
+   If you installed it from GitHub, use the source that `pi list` shows (e.g. `pi uninstall git:github.com/mkemalemdar/pi-harness-whatsapp`).
+4. **Tidy up after npm.** npm removes every file, but leaves a few empty folders (like `@types`) in Pi's package folder. This deletes only folders that are empty:
+   ```bash
+   find ~/.pi/agent/npm/node_modules ~/.pi/agent/git -mindepth 1 -type d -empty -delete 2>/dev/null
+   ```
+
+**Check that it's gone:** `pi list` no longer shows it, and `ls ~/.pi/agent/pi-harness-whatsapp` says "No such file or directory".
+
+**Already uninstalled without step 1?** Make sure no Pi is running, then delete the folder yourself: `rm -rf ~/.pi/agent/pi-harness-whatsapp` (if you set `PI_HARNESS_WHATSAPP_DIR` to a folder that holds other things too, delete only the entries listed under [Files](#files)). Then, on your phone, remove Pi under WhatsApp → Settings → Linked devices.
+
+**Removing the background service** (use your unit's name; for a system service, run the same with `sudo` and without `--user`, and the file is in `/etc/systemd/system/`):
+```bash
+systemctl --user disable --now pi-whatsapp.service
+rm ~/.config/systemd/user/pi-whatsapp.service
+systemctl --user daemon-reload
+```
+If you turned on lingering only for this service, turn it off again with `loginctl disable-linger`. Remove the tmux session it used with `tmux kill-session -t <name>` if it's still running.
+
+**What isn't removed, on purpose:**
+- **Your Pi sessions** (`~/.pi/agent/sessions/`). Chats you had with Pi from WhatsApp are ordinary Pi sessions, and they contain small `pi-harness-whatsapp/session` entries (whether WhatsApp was on). Pi ignores those once the extension is gone; cutting them out would break the sessions. Delete whole sessions in Pi if you don't want them.
+- **Programs installed for it:** `ffmpeg` (and `tmux` if you used the background service). Other programs may use them; if not, remove them with your package manager (e.g. `sudo apt remove ffmpeg tmux`).
+- **npm's download cache** (`~/.npm/_cacache`) keeps a copy of every package npm downloaded, this one included. `npm cache clean --force` empties the whole cache.
+- **The chat on your phone** with Pi's number stays in WhatsApp like any other chat.
 
 ## Troubleshooting
 

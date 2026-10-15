@@ -7,6 +7,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { defaultVoiceFor, getLanguage } from "./languages.ts";
+import { isRemoved } from "./removed.ts";
 
 export type VoiceMode = "off" | "voice" | "voice+text" | "mirror";
 export type CommandAccess = "owner" | "allowed";
@@ -243,6 +244,7 @@ export class SettingsStore {
 	}
 
 	private save(): void {
+		if (isRemoved()) return;
 		mkdirSync(dirname(this.filePath), { recursive: true });
 		const temporary = `${this.filePath}.${process.pid}.tmp`;
 		writeFileSync(temporary, `${JSON.stringify(this.settings, null, 2)}\n`, { mode: 0o600 });

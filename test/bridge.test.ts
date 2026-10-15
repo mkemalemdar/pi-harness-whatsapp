@@ -253,20 +253,20 @@ describe("Bridge routing", () => {
 		let label = "";
 		(h.bridge as unknown as { deps: { media: unknown } }).deps.media = {
 			prepare: async (_message: unknown, header: (voiceTag?: string) => string) => {
-				label = header("voice note · Türkçe");
+				label = header("voice note");
 				return { content: `${label} merhaba`, voice: true };
 			},
 			deliverReply: async () => {},
 		};
 		await h.bridge.handleUpsert([incoming("voice")], "notify");
-		expect(label).toBe("[WhatsApp · Alex · voice note · Türkçe · your reply is spoken to Alex]");
+		expect(label).toBe("[WhatsApp · Alex · voice note · your reply is spoken to Alex]");
 		start(0);
 		await h.bridge.onSettled(false);
 		h.settings.update((draft) => {
 			draft.voiceMode = "off";
 		});
 		await h.bridge.handleUpsert([incoming("voice")], "notify");
-		expect(label).toBe("[WhatsApp · Alex · voice note · Türkçe · your reply goes to Alex]");
+		expect(label).toBe("[WhatsApp · Alex · voice note · your reply goes to Alex]");
 	});
 
 	it("ignores duplicates, non-live messages and strangers", async () => {

@@ -52,7 +52,7 @@ export interface CommandHandler {
 
 /** Turns media into prompt content and delivers replies (voice, when enabled). */
 export interface MediaHandler {
-	/** `header(voiceTag)` builds the label in front of the message; voice notes pass e.g. "voice note · Türkçe". */
+	/** `header(voiceTag)` builds the label in front of the message; voice notes pass "voice note". */
 	prepare(message: InboundMessage, header: (voiceTag?: string) => string): Promise<PreparedPrompt>;
 	/** Sends the final reply; may turn it into a voice note. */
 	deliverReply(chatJid: string, text: string, context: { voiceIn: boolean; language?: string }): Promise<void>;
@@ -288,7 +288,7 @@ export class Bridge {
 	 * next to the message, who is talking and where the answer goes, so even small
 	 * models answer the sender directly:
 	 *   [WhatsApp · Alex · your reply goes to Alex]
-	 *   [WhatsApp · Alex · voice note · Türkçe · your reply is spoken to Alex]
+	 *   [WhatsApp · Alex · voice note · your reply is spoken to Alex]
 	 */
 	private header(message: InboundMessage, access: Access): (voiceTag?: string) => string {
 		const sender =
@@ -377,7 +377,7 @@ export class Bridge {
 			"- Name is talking to you directly from their phone. Answer Name directly, as \"you\" — don't describe their message to someone else or ask what to reply to them.",
 			"- Your final answer is sent to them automatically. Don't use a tool just to reply.",
 			"- Keep answers short and chat-friendly. Summarize long code, and write files to disk instead.",
-			"- Voice notes arrive already transcribed, e.g. `[WhatsApp · Name · voice note · Turkish · your reply is spoken to Name]`.",
+			"- Voice notes arrive already transcribed, e.g. `[WhatsApp · Name · voice note · your reply is spoken to Name]`. Transcripts can contain misheard words.",
 			"- When the label says \"your reply is spoken\", your answer becomes a voice note automatically: write plain speech, and don't use whatsapp_send_voice to repeat it. Use that tool only for extra content, such as reading something aloud.",
 			"- Group labels look like `[WhatsApp group \"Team\" · Name · your reply goes to the group]`: answer the group.",
 			`- ${language}`,

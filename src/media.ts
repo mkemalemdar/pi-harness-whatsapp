@@ -7,7 +7,6 @@ import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs
 import { basename, extname, join } from "node:path";
 import type { MediaHandler, PreparedPrompt } from "./bridge.ts";
 import { isCodeHeavy, textForSpeech } from "./format.ts";
-import { languageLabel } from "./languages.ts";
 import { createLogger } from "./log.ts";
 import type { SettingsStore } from "./settings.ts";
 import { chooseSpeechLanguage } from "./voice/language.ts";
@@ -120,10 +119,10 @@ export class Media implements MediaHandler {
 			const audio = await this.deps.connection.download(message.raw);
 			const transcript = await this.deps.voice.transcribe(audio);
 			const language = transcript.language;
-			const tag = language ? `voice note · ${languageLabel(language).replace(/ \(.*\)$/, "")}` : "voice note";
 			log.info(`transcribed ${message.seconds ?? "?"}s voice note in ${transcript.ms}ms (${language ?? "?"})`);
 			const text = transcript.text || "(no speech recognized)";
-			return { content: `${makeHeader(tag)}${quoted} ${text}`, voice: true, ...(language ? { language } : {}) };
+			// The language isn't in the label: the model can see it, and the voice is picked without it.
+			return { content: `${makeHeader("voice note")}${quoted} ${text}`, voice: true, ...(language ? { language } : {}) };
 		} catch (error) {
 			log.error("voice note transcription failed", error);
 			const reason = error instanceof Error ? error.message : String(error);

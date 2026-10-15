@@ -104,7 +104,7 @@ Commands are handled by the extension and never reach the model. Send `/help` to
 
 ## Voice
 
-Voice notes are transcribed on your machine and given to Pi tagged with their language, e.g. `[WhatsApp · Name · voice note · Türkçe · your reply is spoken to Name] …`. When the reply will be spoken, the model is told so, and that it shouldn't send a separate voice note repeating its answer. With **Mirror me**, Pi answers in the language you used, and the voice reply uses that language's voice.
+Voice notes are transcribed on your machine and given to Pi with a label, e.g. `[WhatsApp · Name · voice note · your reply is spoken to Name] …`. When the reply will be spoken, the model is told so, and that it shouldn't send a separate voice note repeating its answer. With **Mirror me**, Pi answers in the language you used, and the voice reply uses that language's voice.
 
 Speech files download the first time they're needed, and the chat is told while it waits. If you change languages, voices or the speech model in `/whatsapp`, Pi asks when you close the panel whether to download the new files now. One multilingual Whisper model covers every language. Each spoken language needs one Piper voice (~67 MB download).
 

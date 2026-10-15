@@ -7,6 +7,7 @@ import { notifyTerminal, type Command, type CommandEnv } from "./types.ts";
 
 const VOICE_ALIASES: Record<string, VoiceMode> = {
 	off: "off",
+	text: "off",
 	voice: "voice",
 	on: "voice",
 	both: "voice+text",
@@ -26,23 +27,23 @@ export function settingsCommands(): Command[] {
 	return [
 		{
 			name: "voice",
-			usage: "/voice [off|voice|both|mirror]",
-			summary: "voice replies",
+			usage: "/voice [text|voice|both|mirror]",
+			summary: "reply type (text, voice, both, mirror me)",
 			gated: true,
 			run: async (args, request, env) => {
 				const apply = (mode: VoiceMode) => {
 					env.settings.update((draft) => {
 						draft.voiceMode = mode;
 					});
-					notifyTerminal(env, `voice replies → ${VOICE_MODE_LABELS[mode]}`);
-					return `✅ Voice replies → ${VOICE_MODE_LABELS[mode]}`;
+					notifyTerminal(env, `reply type → ${VOICE_MODE_LABELS[mode]}`);
+					return `✅ Reply type → ${VOICE_MODE_LABELS[mode]}`;
 				};
 				const direct = VOICE_ALIASES[args.toLowerCase()];
 				if (direct) return apply(direct);
 				const current = env.settings.get().voiceMode;
 				await env.menus.show(request.chatJid, {
 					kind: "voice",
-					title: `Voice replies (now ${VOICE_MODE_LABELS[current]})`,
+					title: `Reply type (now ${VOICE_MODE_LABELS[current]})`,
 					gated: true,
 					options: VOICE_MODES.map((mode) => ({ label: `${mode === current ? "✓ " : ""}${VOICE_MODE_LABELS[mode]}`, value: mode })),
 					onPick: async ([mode]) => apply(mode as VoiceMode),
@@ -82,7 +83,7 @@ export function settingsCommands(): Command[] {
 		{
 			name: "speed",
 			usage: "/speed [0.5–2.0]",
-			summary: "voice speed",
+			summary: "voice reply speed",
 			gated: true,
 			run: async (args, request, env) => {
 				const apply = (value: number) => {
@@ -90,7 +91,7 @@ export function settingsCommands(): Command[] {
 						draft.voiceSpeed = clampSpeed(value);
 					});
 					notifyTerminal(env, `voice speed → ${formatSpeed(saved.voiceSpeed)}`);
-					return `✅ Voice speed → ${formatSpeed(saved.voiceSpeed)}`;
+					return `✅ Voice reply speed → ${formatSpeed(saved.voiceSpeed)}`;
 				};
 				if (args) {
 					const value = Number.parseFloat(args.replace(",", "."));
@@ -100,7 +101,7 @@ export function settingsCommands(): Command[] {
 				const current = env.settings.get().voiceSpeed;
 				await env.menus.show(request.chatJid, {
 					kind: "speed",
-					title: `Voice speed (now ${formatSpeed(current)}; or send /speed 1.15)`,
+					title: `Voice reply speed (now ${formatSpeed(current)}; or send /speed 1.15)`,
 					gated: true,
 					options: SPEED_PRESETS.map((speed) => ({
 						label: `${speed === current ? "✓ " : ""}${speed < 1 ? "Slower" : speed > 1 ? "Faster" : "Normal"} ${formatSpeed(speed)}`,

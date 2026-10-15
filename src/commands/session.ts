@@ -44,7 +44,7 @@ function settingsLines(env: CommandEnv): string[] {
 	const settings = env.settings.get();
 	const replies = REPLY_TOGGLES.map((toggle) => `${toggle.label.toLowerCase()} ${settings.replies[toggle.key] ? "✓" : "✗"}`).join(", ");
 	return [
-		`Voice replies: ${VOICE_MODE_LABELS[settings.voiceMode]} · speed ${formatSpeed(settings.voiceSpeed)}`,
+		`Reply type: ${VOICE_MODE_LABELS[settings.voiceMode]} · voice reply speed ${formatSpeed(settings.voiceSpeed)}`,
 		`Reply language: ${replyLanguageLabel(settings.replyLanguage)} · languages: ${settings.languages.map(languageLabel).join(", ")}`,
 		`Replies: final ✓, ${replies}`,
 		...(env.voiceStatus ? [env.voiceStatus()] : []),

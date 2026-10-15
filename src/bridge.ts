@@ -219,7 +219,7 @@ export class Bridge {
 		if (!this.ignoredNotified.has(key)) {
 			this.ignoredNotified.add(key);
 			ctx.ui.notify(
-				`WhatsApp: ignored a message from ${message.isGroup ? "a group" : who}. Allow it in /whatsapp → Allowed contacts.`,
+				`WhatsApp: ignored a message from ${message.isGroup ? "a group" : who}. Allow it in /whatsapp → Allowed chats.`,
 				"info",
 			);
 		}

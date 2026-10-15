@@ -13,13 +13,11 @@ import type { CommandEnv } from "./commands/types.ts";
 import { contactsFlow, type RecentChat } from "./contacts-flow.ts";
 import { createLogger, logFilePath } from "./log.ts";
 import { cleanInbox, Media } from "./media.ts";
-import { formatSpeed } from "./panel-model.ts";
-import { type PanelHost, showPanel } from "./panel.ts";
+import type { SpeechInfo } from "./panel-model.ts";
+import { getLanguage } from "./languages.ts";
+import { type ConnectionCommand, type PanelHost, type SpeechFile, showPanel } from "./panel.ts";
 import { paths } from "./paths.ts";
 import {
-	clampSpeed,
-	MAX_SPEED,
-	MIN_SPEED,
 	restoreSessionState,
 	SESSION_ENTRY_TYPE,
 	type SessionState,
@@ -30,7 +28,7 @@ import { phoneJid } from "./wa/jid.ts";
 import { SendQueue } from "./wa/outbound.ts";
 import { PollMenus } from "./wa/polls.ts";
 import { RecentsStore } from "./wa/recents.ts";
-import type { ModelSpec } from "./voice/models.ts";
+import { type ModelSpec, voiceModelSpec } from "./voice/models.ts";
 import { VoiceService } from "./voice/service.ts";
 
 export const STATUS_KEY = "whatsapp";
@@ -58,8 +56,6 @@ export class Controller implements PanelHost, CommandEnv {
 	readonly commands: CommandRouter;
 	readonly voice: VoiceService;
 	private readonly downloads = new Map<string, { spec: ModelSpec; fraction: number }>();
-	/** Unused models the user chose to keep this session (don't ask again). */
-	private readonly keptModels = new Set<string>();
 	private session: SessionState = { enabled: false, autoCompact: true };
 	private ctx: ExtensionContext | undefined;
 	private lastState: ConnectionState["kind"] = "stopped";
@@ -92,10 +88,6 @@ export class Controller implements PanelHost, CommandEnv {
 			queue: this.queue,
 			voice: this.voice,
 			inboxDir: paths.inbox(),
-		});
-		// Changing languages, voices or the speech model fetches what's missing in the background.
-		this.settings.onChange(() => {
-			if (this.session.enabled) this.voice.prefetch();
 		});
 		this.bridge = new Bridge({
 			pi,
@@ -214,90 +206,114 @@ export class Controller implements PanelHost, CommandEnv {
 		return this.recents.list();
 	}
 
-	/** /whatsapp: the settings panel, reopened after each follow-up dialog. */
+	/** /whatsapp: the settings panel; reopened after the "Allowed chats" dialogs. */
 	async openSettings(ctx: ExtensionContext): Promise<void> {
 		this.ctx = ctx;
 		if (ctx.mode !== "tui") {
 			ctx.ui.notify("The WhatsApp settings panel needs the interactive terminal.", "error");
 			return;
 		}
+		const missingBefore = new Set(this.voice.missingModels().map((spec) => spec.name));
+		let focus: string | undefined;
 		for (;;) {
-			const action = await showPanel(ctx, this);
+			const action = await showPanel(ctx, this, focus);
+			this.renderStatus();
 			// The QR code appeared: the panel closed so it's visible; don't cover it with dialogs.
 			if (action === "qr") return;
-			if (action === undefined) {
-				await this.offerModelCleanup(ctx);
-				return;
+			if (action === "contacts") {
+				await contactsFlow(ctx, this.settings, () => this.recentChats());
+				focus = "contacts";
+				continue;
 			}
-			if (action === "contacts") await contactsFlow(ctx, this.settings, () => this.recentChats());
-			else if (action === "connection") await this.connectionMenu(ctx);
-			else if (action === "customSpeed") await this.askCustomSpeed(ctx);
-			else if (action === "reopen") await this.offerModelCleanup(ctx);
-			this.renderStatus();
-		}
-	}
-
-	private async connectionMenu(ctx: ExtensionContext): Promise<void> {
-		const state = this.connection.getState();
-		const options: string[] = [];
-		if (!this.session.enabled) options.push("Turn WhatsApp on and connect");
-		else if (state.kind !== "open") options.push("Connect now");
-		options.push("Show a new QR code (pair again)", "Log out (unlink this device)", `Log file: ${logFilePath()}`, "← Back");
-		const choice = await ctx.ui.select(`WhatsApp: ${this.connectionLabel()}`, options);
-		if (!choice || choice === "← Back" || choice.startsWith("Log file")) return;
-
-		if (choice === "Turn WhatsApp on and connect") {
-			await this.setEnabled(true);
-		} else if (choice === "Connect now") {
-			await this.connection.stop();
-			await this.connection.start();
-		} else if (choice.startsWith("Show a new QR")) {
-			const sure = await ctx.ui.confirm(
-				"Pair again?",
-				"This unlinks the current WhatsApp login on this machine and shows a new QR code to scan.",
-			);
-			if (!sure) return;
-			if (!this.session.enabled) await this.setEnabled(true);
-			await this.connection.repair();
-		} else if (choice.startsWith("Log out")) {
-			const sure = await ctx.ui.confirm(
-				"Log out of WhatsApp?",
-				"Pi is removed from the phone's Linked devices. You'll need to scan a QR code again to use it.",
-			);
-			if (!sure) return;
-			await this.connection.logout();
-			this.renderStatus();
-		}
-	}
-
-	/** After languages/voices change: offer to delete voice or speech files nothing uses any more. */
-	private async offerModelCleanup(ctx: ExtensionContext): Promise<void> {
-		const unused = this.voice.unusedModels().filter((spec) => !this.keptModels.has(spec.name));
-		if (unused.length === 0) return;
-		const megabytes = unused.reduce((sum, spec) => sum + spec.approxMB, 0);
-		const remove = await ctx.ui.confirm(
-			"Delete unused speech files?",
-			`${unused.map((spec) => spec.name).join(", ")} ${unused.length === 1 ? "is" : "are"} no longer used (~${megabytes} MB). Delete? (They download again if needed.)`,
-		);
-		for (const spec of unused) {
-			if (remove) this.voice.models.remove(spec);
-			else this.keptModels.add(spec.name);
-		}
-	}
-
-	private async askCustomSpeed(ctx: ExtensionContext): Promise<void> {
-		const current = formatSpeed(this.settings.get().voiceSpeed);
-		const raw = await ctx.ui.input(`Voice speed (${formatSpeed(MIN_SPEED)}–${formatSpeed(MAX_SPEED)})`, current);
-		if (raw === undefined || !raw.trim()) return;
-		const value = Number.parseFloat(raw.replace(",", "."));
-		if (!Number.isFinite(value)) {
-			ctx.ui.notify("Please type a number, e.g. 1.15", "error");
+			await this.offerDownloads(ctx, missingBefore);
 			return;
 		}
-		const saved = this.settings.update((draft) => {
-			draft.voiceSpeed = clampSpeed(value);
-		});
-		if (saved.voiceSpeed !== value) ctx.ui.notify(`Voice speed set to ${formatSpeed(saved.voiceSpeed)}`, "info");
+	}
+
+	/** After the panel closes: if the new choices need files, ask once whether to download them now. */
+	private async offerDownloads(ctx: ExtensionContext, missingBefore: ReadonlySet<string>): Promise<void> {
+		const needed = this.voice.missingModels().filter((spec) => !missingBefore.has(spec.name) && !this.voice.models.isDownloading(spec));
+		if (needed.length === 0) return;
+		const megabytes = needed.reduce((sum, spec) => sum + spec.approxMB, 0);
+		const choice = await ctx.ui.select(
+			`Download speech files? Your settings need: ${needed.map((spec) => this.voice.describe(spec)).join(", ")} (~${megabytes} MB)`,
+			["Now", "Later (downloads automatically when first needed)"],
+		);
+		if (choice === "Now") {
+			for (const spec of needed) {
+				void this.voice.models.ensure(spec).catch((error) => log.warn(`download of ${spec.name} failed`, error));
+			}
+		}
+	}
+
+	// ── PanelHost: things the panel's submenus do ──────────────────────────
+
+	logFile(): string {
+		return logFilePath();
+	}
+
+	async connectionCommand(command: ConnectionCommand): Promise<void> {
+		if (command === "connect") {
+			if (!this.session.enabled) {
+				await this.setEnabled(true);
+				return;
+			}
+			await this.connection.stop();
+			await this.connection.start();
+		} else if (command === "repair") {
+			if (!this.session.enabled) await this.setEnabled(true);
+			await this.connection.repair();
+		} else {
+			await this.connection.logout();
+		}
+		this.renderStatus();
+	}
+
+	speechInfo(): SpeechInfo {
+		return {
+			installed: new Set(this.voice.models.installedNames()),
+			missingCount: this.voice.missingModels().length,
+			unusedCount: this.voice.unusedModels().length,
+			diskMB: Math.round(this.voice.models.diskUsage() / 1e6),
+		};
+	}
+
+	missingFiles(): SpeechFile[] {
+		return this.voice.missingModels().map((spec) => this.voice.file(spec, false));
+	}
+
+	unusedFiles(): SpeechFile[] {
+		return this.voice.unusedModels().map((spec) => this.voice.file(spec, true));
+	}
+
+	isInstalled(name: string): boolean {
+		return this.voice.models.installedNames().includes(name);
+	}
+
+	downloadMissing(): void {
+		this.voice.prefetch();
+	}
+
+	deleteFiles(names: readonly string[]): void {
+		for (const spec of this.voice.unusedModels()) {
+			if (names.includes(spec.name)) this.voice.models.remove(spec);
+		}
+	}
+
+	async sendVoiceSample(language: string, voiceId: string, onStatus: (text: string) => void): Promise<void> {
+		const owner = this.settings.get().contacts.find((contact) => contact.owner);
+		if (!owner) throw new Error("No owner set yet: add yourself in Allowed chats first.");
+		if (!this.session.enabled || !this.connection.isOpen()) throw new Error("WhatsApp isn't connected, so the sample can't be sent.");
+		const spec = voiceModelSpec(voiceId);
+		if (!this.voice.models.isInstalled(spec)) {
+			onStatus("Downloading the voice (67 MB)…");
+			await this.voice.models.ensure(spec);
+		}
+		onStatus("Sending the sample…");
+		const note = await this.voice.speakWith(getLanguage(language)?.sample ?? "Hello!", voiceId);
+		const jid = owner.lid === owner.id ? `${owner.id}@lid` : phoneJid(owner.id);
+		const result = await this.queue.enqueue(jid, { audio: note.audio, ptt: true, seconds: note.seconds, mimetype: "audio/ogg; codecs=opus" });
+		if (!result) throw new Error("WhatsApp didn't accept the sample (see the log).");
 	}
 
 	private async askAtSessionStart(ctx: ExtensionContext): Promise<void> {
@@ -319,7 +335,6 @@ export class Controller implements PanelHost, CommandEnv {
 			this.queue.reopen();
 			this.bridge.markEnabled();
 			await this.connection.start();
-			this.voice.prefetch();
 		} else {
 			this.queue.close();
 			this.bridge.reset();

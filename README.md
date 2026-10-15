@@ -45,24 +45,31 @@ You can also use your own number: the "Message yourself" chat works and counts a
 
 ## Settings: `/whatsapp`
 
-| Setting | What it does |
-|---|---|
-| **WhatsApp** | On / Off for this session. Continued sessions get their own value back; new sessions start with the last value you chose. |
-| **Reply: final answer** | Always on. |
-| **Reply: summary** | Adds `✅ 4/6 tool calls ok · ⏱ 2m 14s`. |
-| **Reply: in-between messages** | Sends what Pi writes while it's still working. |
-| **Reply: touched files** | Adds the list of files Pi wrote or edited. |
-| **Reply: tool activity** | One message, edited in place, showing the latest tool steps. |
-| **Voice replies** | Off · Voice · Voice + text · **Mirror me** (voice note in → voice reply). |
-| **Reply language** | **Mirror me** (answer in your language) or a fixed language. |
-| **Languages / Default language / Voices** | Which languages Pi listens to and speaks, and with which voice. |
-| **Speech model** | **Fast (base)** · Balanced (small) · Accurate (turbo). See below. |
-| **Voice speed** | Slower 0.9 · Normal 1.0 · Faster 1.2 · Custom (0.5–2.0). |
-| **Forward images from tools** | Off by default. When on, every image a tool makes while answering you (e.g. browser screenshots) is sent to you automatically. You can always ask Pi to send a specific image instead. |
-| **Ask at session start** | Asks "WhatsApp for this session?" when a session opens (off by default). |
-| **Command access** | Who may change Pi from WhatsApp: **only the owner** (default) or all allowed contacts. |
-| **Allowed contacts** | Who can talk to Pi. ★ marks the owner. |
-| **Connection** | Connect, show a new QR code, or log out. |
+Every row opens a small menu with the choices and a short explanation. Nothing changes until you pick something. Defaults are in **bold**.
+
+| Section | Setting | Choices and what it does |
+|---|---|---|
+| Connection | WhatsApp (this session) | On · **Off**. Continued sessions get their own value back; new sessions start with the last value you chose. |
+| | Connection | Connect now, show a new QR code (pair again), or log out. |
+| | Allowed chats | People and groups that can talk to Pi. ★ marks the owner. |
+| | Who can use commands | **Only me** (the owner) · all allowed chats. |
+| | Ask on/off at session start | On · **Off**. Asks whether WhatsApp should be on when a session opens. |
+| Replies | Final answer | Always on. |
+| | Reply type | **Mirror me** (voice note in → voice reply) · text · voice · voice + text. |
+| | Progress messages | On · **Off**. What Pi writes while it's still working. |
+| | Live tool log | On · **Off**. One message, updated live, with the latest tool steps. |
+| | Changed files | On · **Off**. The files Pi wrote or edited. |
+| | Stats (tools · time) | On · **Off**. A line like `✅ 4/6 tool calls ok · ⏱ 2m 14s`. |
+| | Auto-send tool images | On · **Off**. Every image a tool makes while answering you (e.g. browser screenshots). You can always ask Pi to send a specific image instead. |
+| Languages | Reply language | **Mirror me** (the language you used) or one of your languages. |
+| | My languages | Tick the languages you use (**English**). Each gets a voice for spoken replies. |
+| | Fallback language | Used only when Pi can't tell which language to use (**the first of your languages**). |
+| | Voice per language | Which voice speaks each language. "Send me a sample" sends a short voice note to your WhatsApp first. |
+| Technical | Speech-to-text model | **Fast (base)** · balanced (small) · accurate (turbo). See below. |
+| | Voice reply speed | 0.9 · **1.0** · 1.2 · custom (0.5–2.0). |
+| | Speech files | Download what your settings need, or delete unused files (shown as a ticked list; untick what you want to keep). |
+
+Speech files are never downloaded just because you look at a choice. When you close the panel and your new settings need files, Pi asks once: download now, or later when first needed.
 
 Settings are stored in `~/.pi/agent/pi-harness-whatsapp/config.json`.
 
@@ -79,7 +86,7 @@ Commands are handled by the extension and never reach the model. Menus are **Wha
 | `/autocompact [on\|off]` | Automatic compaction for this session (Pi still compacts if the context is completely full) |
 | `/model [name]` | Switch the model for this session; lists only models with a login or API key |
 | `/think [level]` | Reasoning level, limited to what the model supports |
-| `/voice [off\|voice\|both\|mirror]` · `/lang` · `/speed [x]` | Voice settings |
+| `/voice [text\|voice\|both\|mirror]` · `/lang` · `/speed [x]` | Reply type, reply language, voice reply speed |
 | `/replies` | Switch the reply extras on and off (multi-choice poll) |
 | `/new` | Start a fresh Pi session (the old one stays saved) |
 | `/off` | Turn WhatsApp off. It can be turned back on only from the terminal, or by restarting Pi. |
@@ -162,7 +169,7 @@ Everything lives in `~/.pi/agent/pi-harness-whatsapp/`:
 - **QR code expired:** `/whatsapp` → Connection → Connect now.
 - **"needs a new QR scan":** WhatsApp logged the device out (for example, it was removed from Linked devices). Connection → Show a new QR code.
 - **"in use by Pi #…":** another Pi holds the connection; turn WhatsApp off there.
-- **Messages are ignored:** the sender isn't in Allowed contacts. Pi shows a notice in the terminal the first time.
+- **Messages are ignored:** the sender isn't in Allowed chats. Pi shows a notice in the terminal the first time.
 - **Voice notes fail:** check that `ffmpeg -version` works. The first voice note waits for the speech model to download.
 - **More detail:** set `PI_HARNESS_WHATSAPP_DEBUG=1` before starting Pi, and check the log.
 

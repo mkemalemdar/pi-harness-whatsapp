@@ -25,7 +25,7 @@ Ask these together, in one message, and wait for the answers:
    ```
    If another package already registers `/whatsapp` (each entry shows its `source`), ask the user to remove that package first. Other WhatsApp extensions that use different command names can stay.
 3. **Languages:** which languages they will speak and want spoken replies in. The default is English only. Each spoken language downloads one voice (~67 MB); speech recognition covers all languages with one model.
-4. **Speech model:** this depends on free RAM (check with `free -m`):
+4. **Speech-to-text model:** this depends on free RAM (check with `free -m`):
    - **base** (default): ~1.0 GB, fastest (about 2.5–4.5× faster than the others in our tests)
    - **small**: ~1.6 GB, fewer mistakes than base in most tested languages
    - **turbo**: ~2.9 GB, the fewest mistakes in our tests
@@ -89,7 +89,7 @@ Tell the user:
 ## Never do this
 
 - Don't read, copy, print, upload or commit `~/.pi/agent/pi-harness-whatsapp/auth/`. It is the WhatsApp login; anyone with it can use the account.
-- Don't add contacts the user didn't name. Allowed contacts can send prompts to Pi, which can run commands on this machine.
+- Don't add contacts the user didn't name. Allowed chats can send prompts to Pi, which can run commands on this machine.
 - Don't set `commandAccess` to `allowed` unless the user asks.
 - Don't install the systemd service, or enable it at boot, without the user's yes.
 - Don't publish, fork or re-upload this package on the user's behalf.

@@ -49,6 +49,11 @@ class FakeVoice {
 	missingModels() {
 		return [];
 	}
+	installed = true;
+	voiceSpec(language: string) {
+		return voiceModelSpec(`${language}-test-voice`);
+	}
+	models = { isInstalled: () => this.installed };
 }
 
 describe("Media.deliverReply", () => {
@@ -113,6 +118,13 @@ describe("Media.deliverReply", () => {
 		await media.deliverReply("c", `Here is the fix:\n\`\`\`ts\n${"const x = 1;\n".repeat(40)}\`\`\``, { voiceIn: true });
 		expect(kinds()).toEqual(["text", "voice"]);
 		expect(voice.spoken[0]?.text).toBe("Here is the fix:\n (code omitted)");
+	});
+
+	it("says so when a voice has to be downloaded first", async () => {
+		voice.installed = false;
+		await media.deliverReply("c", "Tamam.", { voiceIn: true, language: "tr" });
+		expect((sent[0] as { text: string }).text).toBe("⏳ Getting the voice ready (one-time download, ~67 MB)…");
+		expect("audio" in sent[1]!).toBe(true);
 	});
 
 	it("falls back to text when the voice note can't be made", async () => {

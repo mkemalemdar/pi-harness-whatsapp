@@ -92,19 +92,14 @@ export class ModelStore {
 		rmSync(this.dir(spec), { recursive: true, force: true });
 	}
 
+	/** Disk use of one model, in bytes. */
+	sizeOf(spec: ModelSpec): number {
+		return folderSize(this.dir(spec));
+	}
+
 	/** Disk use of installed models, in bytes. */
 	diskUsage(): number {
-		if (!existsSync(this.root)) return 0;
-		let total = 0;
-		const walk = (path: string) => {
-			for (const entry of readdirSync(path, { withFileTypes: true })) {
-				const full = join(path, entry.name);
-				if (entry.isDirectory()) walk(full);
-				else total += statSync(full).size;
-			}
-		};
-		walk(this.root);
-		return total;
+		return folderSize(this.root);
 	}
 
 	whisperFiles(spec: ModelSpec): WhisperFiles {
@@ -175,6 +170,16 @@ export class ModelStore {
 		await pipeline(body, createWriteStream(target));
 		if (total > 0 && received !== total) throw new Error(`download of ${spec.name} was incomplete`);
 	}
+}
+
+function folderSize(path: string): number {
+	if (!existsSync(path)) return 0;
+	let total = 0;
+	for (const entry of readdirSync(path, { withFileTypes: true })) {
+		const full = join(path, entry.name);
+		total += entry.isDirectory() ? folderSize(full) : statSync(full).size;
+	}
+	return total;
 }
 
 /** Keeps only the int8 encoder/decoder and tokens; the full-precision copies are large and unused. */

@@ -1,27 +1,40 @@
 /**
- * The /whatsapp settings panel (terminal UI). Rows come from panel-model.ts;
- * rows that need dialogs (contacts, connection, custom speed) close the panel
- * and return an action, and the caller reopens it afterwards.
+ * The /whatsapp settings panel. Every row opens a submenu; nothing changes
+ * while you just look around. Only "Allowed chats" leaves the panel (it uses
+ * dialogs to type numbers and names) and the panel reopens afterwards.
  */
 
-import { type ExtensionContext, getSelectListTheme, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, SelectList, type SettingItem, SettingsList, Text } from "@earendil-works/pi-tui";
+import { type ExtensionContext, getSettingsListTheme, type Theme } from "@earendil-works/pi-coding-agent";
+import { type Component, Container, type SettingItem, SettingsList, Text } from "@earendil-works/pi-tui";
+import { getLanguage, languageLabel } from "./languages.ts";
 import {
-	applyLanguageToggle,
-	applyRowChange,
+	applyChoice,
+	applyLanguageSelection,
 	applyVoiceChoice,
 	buildRows,
 	CUSTOM,
-	languageRows,
-	OFF,
+	formatSpeed,
+	languageChecklist,
 	ON,
+	type PanelRow,
 	type PanelState,
 	SPEED_CHOICES,
-	voiceRows,
+	type SpeechInfo,
+	voiceLabel,
 } from "./panel-model.ts";
-import type { SettingsStore } from "./settings.ts";
+import { groupMarker, InputStep, ListMenu, type MenuItem, MenuStack } from "./panel-components.ts";
+import { clampSpeed, MAX_SPEED, MIN_SPEED, type SettingsStore } from "./settings.ts";
 
-export type PanelAction = "contacts" | "connection" | "customSpeed" | "reopen" | "qr";
+export type PanelAction = "contacts" | "qr";
+
+export interface SpeechFile {
+	name: string;
+	label: string;
+	kind: "stt" | "tts";
+	sizeMB: number;
+}
+
+export type ConnectionCommand = "connect" | "repair" | "logout";
 
 export interface PanelHost {
 	settings: SettingsStore;
@@ -30,15 +43,27 @@ export interface PanelHost {
 	connectionLabel(): string;
 	/** A QR code is on screen waiting to be scanned. */
 	isShowingQr(): boolean;
+	logFile(): string;
+	connectionCommand(command: ConnectionCommand): Promise<void>;
+	speechInfo(): SpeechInfo;
+	missingFiles(): SpeechFile[];
+	unusedFiles(): SpeechFile[];
+	isInstalled(name: string): boolean;
+	/** Starts downloading what the settings need, in the background. */
+	downloadMissing(): void;
+	deleteFiles(names: readonly string[]): void;
+	/** Downloads the voice if needed and sends a short sample to the owner's WhatsApp. */
+	sendVoiceSample(language: string, voiceId: string, onStatus: (text: string) => void): Promise<void>;
 }
 
-/** Shows the panel once; resolves with the follow-up action, or undefined when closed. */
-export function showPanel(ctx: ExtensionContext, host: PanelHost): Promise<PanelAction | undefined> {
+/** Shows the panel; resolves with a follow-up action, or undefined when closed. */
+export function showPanel(ctx: ExtensionContext, host: PanelHost, focus?: string): Promise<PanelAction | undefined> {
 	return ctx.ui.custom<PanelAction | undefined>((tui, theme, _keybindings, done) => {
 		const state = (): PanelState => ({
 			settings: host.settings.get(),
 			enabled: host.isEnabled(),
 			connection: host.connectionLabel(),
+			speech: host.speechInfo(),
 		});
 		let closed = false;
 		let refresh: ReturnType<typeof setInterval> | undefined;
@@ -48,128 +73,509 @@ export function showPanel(ctx: ExtensionContext, host: PanelHost): Promise<Panel
 			if (refresh) clearInterval(refresh);
 			done(action);
 		};
-		const placeholder: Component = { render: () => [], invalidate() {} };
+		const render = () => tui.requestRender();
+		let list: SettingsList | undefined;
+		const refreshValues = () => {
+			for (const row of buildRows(state())) list?.updateValue(row.id, row.currentValue);
+			render();
+		};
 
 		const items: SettingItem[] = buildRows(state()).map((row) => {
-			const item: SettingItem = {
-				id: row.id,
-				label: row.label,
-				description: row.description,
-				currentValue: row.currentValue,
-			};
-			if (row.values) item.values = row.values;
-			if (row.kind === "action") {
+			const item: SettingItem = { id: row.id, label: row.label, description: row.description, currentValue: row.currentValue };
+			if (row.kind === "header") return item;
+			if (row.kind === "contacts") {
 				item.submenu = () => {
-					finish(row.id as PanelAction);
-					return placeholder;
+					finish("contacts");
+					return { render: () => [], invalidate() {} };
 				};
-			} else if (row.kind === "languages") {
-				item.submenu = (_value, close) => languagesSubmenu(host, () => close(undefined), () => finish("reopen"));
-			} else if (row.kind === "voices") {
-				item.submenu = (_value, close) => voicesSubmenu(host, () => close(undefined), () => finish("reopen"));
-			} else if (row.kind === "speed") {
-				item.submenu = (value, close) =>
-					speedSubmenu(value, (picked) => {
-						if (picked === CUSTOM) finish("customSpeed");
-						else close(picked);
-					});
+				return item;
 			}
+			item.submenu = (_value, close) => {
+				const stack = new MenuStack(() => {
+					close(undefined);
+					refreshValues();
+				});
+				stack.push(openSubmenu(row, { host, theme, stack, render, refreshValues }));
+				return stack;
+			};
 			return item;
 		});
 
-		const list = new SettingsList(
-			items,
-			Math.min(items.length, 18),
-			getSettingsListTheme(),
-			(id, value) => {
-				if (id === "whatsapp") {
-					void host.setEnabled(value === ON).then(() => {
-						list.updateValue("connection", host.connectionLabel());
-						tui.requestRender();
-					});
-					return;
-				}
-				host.settings.update((draft) => {
-					applyRowChange(draft, id, value);
-				});
-				// Show what was actually saved: values get normalized, and some rows summarize others.
-				for (const row of buildRows(state())) list.updateValue(row.id, row.currentValue);
-			},
-			() => finish(undefined),
-		);
+		const settingsList = new SettingsList(items, Math.min(items.length, 26), getSettingsListTheme(), () => {}, () => finish(undefined));
+		list = settingsList;
+		if (focus) settingsList.selectItem(focus);
 
-		// The connection state changes on its own (QR, connected…); keep that row current.
-		let shownConnection = host.connectionLabel();
+		// The connection changes on its own (QR, connected…). Keep it current, and
+		// close as soon as a QR code shows so the panel doesn't cover it.
+		let shown = host.connectionLabel();
 		refresh = setInterval(() => {
-			// Close as soon as a QR code shows, so the panel doesn't cover it.
 			if (host.isShowingQr()) {
 				finish("qr");
 				return;
 			}
 			const label = host.connectionLabel();
-			if (label === shownConnection) return;
-			shownConnection = label;
-			list.updateValue("connection", label);
-			list.updateValue("whatsapp", host.isEnabled() ? ON : OFF);
-			tui.requestRender();
+			if (label === shown) return;
+			shown = label;
+			refreshValues();
 		}, 250);
 		refresh.unref?.();
 
 		const container = new Container();
 		container.addChild(new Text(theme.fg("accent", theme.bold("WhatsApp settings")), 0, 0));
-		container.addChild(list);
-
+		container.addChild(settingsList);
 		return {
 			render: (width: number) => container.render(width),
 			invalidate: () => container.invalidate(),
 			handleInput: (data: string) => {
-				list.handleInput(data);
-				tui.requestRender();
+				settingsList.handleInput(data);
+				render();
 			},
 		};
 	});
 }
 
-function languagesSubmenu(host: PanelHost, close: () => void, reopen: () => void): Component {
-	let changed = false;
-	const list = new SettingsList(
-		languageRows(host.settings.get()),
-		12,
-		getSettingsListTheme(),
-		(code, value) => {
-			let accepted = true;
-			host.settings.update((draft) => {
-				accepted = applyLanguageToggle(draft, code, value);
+interface SubmenuContext {
+	host: PanelHost;
+	theme: Theme;
+	stack: MenuStack;
+	render(): void;
+	refreshValues(): void;
+}
+
+function openSubmenu(row: PanelRow, context: SubmenuContext): Component {
+	switch (row.kind) {
+		case "languages":
+			return languagesMenu(row, context);
+		case "voices":
+			return voicesMenu(row, context);
+		case "speed":
+			return speedMenu(row, context);
+		case "speechFiles":
+			return speechFilesMenu(row, context);
+		case "connection":
+			return connectionMenu(row, context);
+		default:
+			return choiceMenu(row, context);
+	}
+}
+
+function choiceMenu(row: PanelRow, { host, theme, stack }: SubmenuContext): Component {
+	const items: MenuItem[] = (row.choices ?? []).map((choice) => ({
+		id: choice.value,
+		label: choice.label,
+		marker: choice.value === row.current ? "●" : " ",
+		...(choice.detail ? { detail: choice.detail } : {}),
+	}));
+	return new ListMenu(theme, {
+		title: row.label,
+		description: row.description,
+		items,
+		...(row.current ? { initialId: row.current } : {}),
+		onCancel: () => stack.pop(),
+		onSelect: (item) => {
+			if (row.id === "whatsapp") {
+				void host.setEnabled(item.id === ON);
+			} else {
+				host.settings.update((draft) => {
+					applyChoice(draft, row.id, item.id);
+				});
+			}
+			stack.pop();
+		},
+	});
+}
+
+function languagesMenu(row: PanelRow, { host, theme, stack, render }: SubmenuContext): Component {
+	const entries = languageChecklist(host.settings.get());
+	const ticked = new Set(entries.filter((entry) => entry.checked).map((entry) => entry.id));
+	const toItems = (): MenuItem[] =>
+		entries.map((entry) => ({ id: entry.id, label: entry.label, marker: ticked.has(entry.id) ? "[x]" : "[ ]" }));
+	const menu: ListMenu = new ListMenu(theme, {
+		title: row.label,
+		description: `${row.description} Ticked languages keep their order; new ones are added at the end.`,
+		items: toItems(),
+		hint: "↑↓ move · Space/Enter tick · Esc save and back",
+		onToggle: (item) => {
+			if (ticked.has(item.id)) {
+				if (ticked.size === 1) {
+					menu.setStatus("Keep at least one language.", "error");
+					render();
+					return;
+				}
+				ticked.delete(item.id);
+			} else {
+				ticked.add(item.id);
+			}
+			menu.setStatus(undefined);
+			menu.setItems(toItems());
+			render();
+		},
+		onCancel: () => {
+			host.settings.update((draft) =>
+				applyLanguageSelection(
+					draft,
+					entries.map((entry) => entry.id).filter((id) => ticked.has(id)),
+				),
+			);
+			stack.pop();
+		},
+	});
+	return menu;
+}
+
+function voicesMenu(row: PanelRow, context: SubmenuContext): Component {
+	const { host, theme, stack } = context;
+	const languageItems = (): MenuItem[] => {
+		const settings = host.settings.get();
+		return settings.languages.map((code) => ({
+			id: code,
+			label: languageLabel(code),
+			detail: voiceLabel(code, settings.voices[code]),
+		}));
+	};
+	const languages: ListMenu = new ListMenu(theme, {
+		title: row.label,
+		description: row.description,
+		items: languageItems(),
+		onCancel: () => stack.pop(),
+		onSelect: (item) => stack.push(voiceList(item.id, context, () => languages.setItems(languageItems()))),
+	});
+	return languages;
+}
+
+function voiceList(code: string, context: SubmenuContext, onChanged: () => void): Component {
+	const { host, theme, stack } = context;
+	const language = getLanguage(code)!;
+	const items = (): MenuItem[] => {
+		const current = host.settings.get().voices[code];
+		return language.voices.map((voice) => ({
+			id: voice.id,
+			label: voice.label,
+			marker: voice.id === current ? "●" : " ",
+			detail: voice.id === current ? "in use" : host.isInstalled(`vits-piper-${voice.id}`) ? "✓ on disk" : "67 MB",
+		}));
+	};
+	const current = host.settings.get().voices[code];
+	const list: ListMenu = new ListMenu(theme, {
+		title: `${languageLabel(code)} voices`,
+		description: "Pick a voice to use it, or get a sample on WhatsApp first.",
+		items: items(),
+		...(current ? { initialId: current } : {}),
+		onCancel: () => stack.pop(),
+		onSelect: (item) =>
+			stack.push(
+				voiceActions(code, item.id, context, () => {
+					list.setItems(items());
+					onChanged();
+				}),
+			),
+	});
+	return list;
+}
+
+function voiceActions(code: string, voiceId: string, context: SubmenuContext, onChanged: () => void): Component {
+	const { host, theme, stack, render } = context;
+	const voice = getLanguage(code)!.voices.find((option) => option.id === voiceId)!;
+	const onDisk = () => host.isInstalled(`vits-piper-${voiceId}`);
+	const inUse = () => host.settings.get().voices[code] === voiceId;
+	let sending = false;
+	const items = (): MenuItem[] => [
+		{
+			id: "use",
+			label: inUse() ? "In use" : "Use this voice",
+			disabled: inUse(),
+			...(onDisk() || inUse() ? {} : { detail: "downloads when first needed" }),
+			description: "Pi speaks your voice replies in this language with this voice.",
+		},
+		{
+			id: "sample",
+			label: "Send me a sample on WhatsApp",
+			...(onDisk() ? {} : { detail: "downloads 67 MB first" }),
+			description: "Sends a short voice note in this voice to the owner's WhatsApp.",
+		},
+		{ id: "back", label: "Back", description: "Back to the voice list." },
+	];
+	const menu: ListMenu = new ListMenu(theme, {
+		title: voice.label,
+		description: `${languageLabel(code)} voice.`,
+		items: items(),
+		onCancel: () => stack.pop(),
+		onSelect: (item) => {
+			if (item.id === "back") {
+				stack.pop();
+			} else if (item.id === "use") {
+				host.settings.update((draft) => applyVoiceChoice(draft, code, voiceId));
+				onChanged();
+				stack.pop();
+			} else if (item.id === "sample" && !sending) {
+				sending = true;
+				const status = (text: string) => {
+					menu.setStatus(text);
+					render();
+				};
+				host
+					.sendVoiceSample(code, voiceId, status)
+					.then(() => menu.setStatus("✓ Sample sent to WhatsApp.", "ok"))
+					.catch((error: unknown) => menu.setStatus(error instanceof Error ? error.message : String(error), "error"))
+					.finally(() => {
+						sending = false;
+						menu.setItems(items());
+						onChanged();
+						render();
+					});
+			}
+		},
+	});
+	return menu;
+}
+
+function speedMenu(row: PanelRow, { host, theme, stack }: SubmenuContext): Component {
+	const current = formatSpeed(host.settings.get().voiceSpeed);
+	const isPreset = SPEED_CHOICES.some((choice) => choice.value === current);
+	return new ListMenu(theme, {
+		title: row.label,
+		description: row.description,
+		items: SPEED_CHOICES.map((choice) => ({
+			id: choice.value,
+			label: choice.value === CUSTOM && !isPreset ? `custom… (${current})` : choice.label,
+			marker: choice.value === current || (choice.value === CUSTOM && !isPreset) ? "●" : " ",
+			...(choice.detail ? { detail: choice.detail } : {}),
+		})),
+		initialId: isPreset ? current : CUSTOM,
+		onCancel: () => stack.pop(),
+		onSelect: (item) => {
+			if (item.id !== CUSTOM) {
+				host.settings.update((draft) => {
+					applyChoice(draft, "voiceSpeed", item.id);
+				});
+				stack.pop();
+				return;
+			}
+			stack.push(
+				new InputStep(
+					theme,
+					"Custom voice speed",
+					`A number from ${formatSpeed(MIN_SPEED)} to ${formatSpeed(MAX_SPEED)}, e.g. 1.15. 1.0 is normal.`,
+					current,
+					(value) => {
+						const speed = Number.parseFloat(value.replace(",", "."));
+						if (!Number.isFinite(speed)) return "Please type a number, e.g. 1.15";
+						host.settings.update((draft) => {
+							draft.voiceSpeed = clampSpeed(speed);
+						});
+						stack.close();
+						return undefined;
+					},
+					() => stack.pop(),
+				),
+			);
+		},
+	});
+}
+
+function speechFilesMenu(row: PanelRow, context: SubmenuContext): Component {
+	const { host, theme, stack, render } = context;
+	const sum = (files: SpeechFile[]) => files.reduce((total, file) => total + file.sizeMB, 0);
+	const items = (): MenuItem[] => {
+		const missing = host.missingFiles();
+		const unused = host.unusedFiles();
+		return [
+			{
+				id: "download",
+				label: "Download missing",
+				detail: missing.length ? `${missing.length} · ~${sum(missing)} MB` : "nothing missing",
+				disabled: missing.length === 0,
+				description: missing.length
+					? `Downloads now: ${missing.map((file) => file.label).join(", ")}.`
+					: "Everything your settings need is on disk.",
+			},
+			{
+				id: "delete",
+				label: "Delete unused",
+				detail: unused.length ? `${unused.length} · ${sum(unused)} MB` : "nothing unused",
+				disabled: unused.length === 0,
+				description: "Shows the files your settings don't use, all ticked. Untick what you want to keep.",
+			},
+		];
+	};
+	const menu: ListMenu = new ListMenu(theme, {
+		title: row.label,
+		description: row.description,
+		items: items(),
+		onCancel: () => stack.pop(),
+		onSelect: (item) => {
+			if (item.id === "download") {
+				host.downloadMissing();
+				menu.setStatus("Downloading in the background. Progress shows in the footer.", "ok");
+				render();
+			} else if (item.id === "delete") {
+				stack.push(
+					deleteChecklist(context, (message) => {
+						menu.setItems(items());
+						if (message) menu.setStatus(message, "ok");
+					}),
+				);
+			}
+		},
+	});
+	return menu;
+}
+
+function deleteChecklist(context: SubmenuContext, onDone: (message: string | undefined) => void): Component {
+	const { host, theme, stack, render } = context;
+	const files = host.unusedFiles();
+	const ticked = new Set(files.map((file) => file.name));
+	const groups = [
+		{ id: "group:tts", label: "Voices", kind: "tts" as const },
+		{ id: "group:stt", label: "Speech-to-text", kind: "stt" as const },
+	].filter((group) => files.some((file) => file.kind === group.kind));
+	const selectedMB = () => files.filter((file) => ticked.has(file.name)).reduce((total, file) => total + file.sizeMB, 0);
+
+	const items = (): MenuItem[] => {
+		const list: MenuItem[] = [];
+		for (const group of groups) {
+			const members = files.filter((file) => file.kind === group.kind);
+			const count = members.filter((file) => ticked.has(file.name)).length;
+			list.push({
+				id: group.id,
+				label: group.label,
+				marker: groupMarker(count, members.length),
+				detail: `${members.reduce((total, file) => total + file.sizeMB, 0)} MB`,
+				description: "Untick to keep everything in this group.",
 			});
-			if (!accepted) list.updateValue(code, ON);
-			else changed = true;
+			for (const file of members) {
+				list.push({
+					id: file.name,
+					label: file.label,
+					marker: ticked.has(file.name) ? "[x]" : "[ ]",
+					indent: 1,
+					detail: `${file.sizeMB} MB`,
+				});
+			}
+		}
+		list.push({
+			id: "delete",
+			label: `[ Delete selected (${selectedMB()} MB) ]`,
+			button: true,
+			disabled: ticked.size === 0,
+			description: "Deletes the ticked files now. They download again if a setting ever needs them.",
+		});
+		return list;
+	};
+
+	const toggle = (id: string) => {
+		const group = groups.find((entry) => entry.id === id);
+		if (group) {
+			const members = files.filter((file) => file.kind === group.kind);
+			const allTicked = members.every((file) => ticked.has(file.name));
+			for (const file of members) {
+				if (allTicked) ticked.delete(file.name);
+				else ticked.add(file.name);
+			}
+		} else if (ticked.has(id)) {
+			ticked.delete(id);
+		} else {
+			ticked.add(id);
+		}
+		menu.setItems(items());
+		render();
+	};
+
+	const menu: ListMenu = new ListMenu(theme, {
+		title: "Delete unused speech files",
+		description: "Everything starts ticked. Untick what you want to keep, then press the button.",
+		items: items(),
+		hint: "↑↓ move · Space tick/untick · Enter on the button · Esc cancel",
+		onToggle: (item) => {
+			if (item.id !== "delete") toggle(item.id);
 		},
-		() => (changed ? reopen() : close()),
-		{ enableSearch: true },
-	);
-	return list;
+		onSelect: (item) => {
+			if (item.id !== "delete") {
+				toggle(item.id);
+				return;
+			}
+			const names = files.filter((file) => ticked.has(file.name)).map((file) => file.name);
+			const megabytes = selectedMB();
+			host.deleteFiles(names);
+			onDone(`Deleted ${names.length} file${names.length === 1 ? "" : "s"} (${megabytes} MB).`);
+			stack.pop();
+		},
+		onCancel: () => {
+			onDone(undefined);
+			stack.pop();
+		},
+	});
+	return menu;
 }
 
-function voicesSubmenu(host: PanelHost, close: () => void, reopen: () => void): Component {
-	let changed = false;
-	return new SettingsList(
-		voiceRows(host.settings.get()),
-		10,
-		getSettingsListTheme(),
-		(code, label) => {
-			host.settings.update((draft) => applyVoiceChoice(draft, code, label));
-			changed = true;
+function connectionMenu(row: PanelRow, context: SubmenuContext): Component {
+	const { host, theme, stack, render } = context;
+	const confirm = (title: string, description: string, yes: string, command: ConnectionCommand): Component =>
+		new ListMenu(theme, {
+			title,
+			description,
+			items: [
+				{ id: "yes", label: yes },
+				{ id: "no", label: "Cancel" },
+			],
+			initialId: "no",
+			onCancel: () => stack.pop(),
+			onSelect: (item) => {
+				if (item.id === "no") {
+					stack.pop();
+					return;
+				}
+				void host.connectionCommand(command).finally(render);
+				stack.close();
+			},
+		});
+	const connected = host.connectionLabel().startsWith("connected");
+	const items: MenuItem[] = [
+		{
+			id: "connect",
+			label: host.isEnabled() ? (connected ? "Reconnect" : "Connect now") : "Turn WhatsApp on and connect",
+			description: "Starts (or restarts) the connection with the saved login.",
 		},
-		() => (changed ? reopen() : close()),
-	);
-}
-
-function speedSubmenu(current: string, pick: (value: string | undefined) => void): Component {
-	const choices = SPEED_CHOICES.map((choice) => ({ value: choice.value, label: choice.label }));
-	const list = new SelectList(choices, choices.length, getSelectListTheme());
-	const index = choices.findIndex((choice) => choice.value === current);
-	list.setSelectedIndex(index >= 0 ? index : choices.length - 1);
-	list.onSelect = (item) => pick(item.value);
-	list.onCancel = () => pick(undefined);
-	return list;
+		{
+			id: "repair",
+			label: "Show a new QR code (pair again)",
+			description: "Unlinks the current login on this machine and shows a new QR code to scan.",
+		},
+		{
+			id: "logout",
+			label: "Log out (unlink this device)",
+			description: "Removes Pi from the phone's Linked devices. You'll need to scan a QR code again.",
+		},
+		{ id: "log", label: `Log file: ${host.logFile()}`, disabled: true },
+	];
+	return new ListMenu(theme, {
+		title: row.label,
+		description: `Now: ${host.connectionLabel()}`,
+		items,
+		onCancel: () => stack.pop(),
+		onSelect: (item) => {
+			if (item.id === "connect") {
+				void host.connectionCommand("connect").finally(render);
+				stack.close();
+			} else if (item.id === "repair") {
+				stack.push(
+					confirm(
+						"Pair again?",
+						"This unlinks the current WhatsApp login on this machine and shows a new QR code.",
+						"Yes, show a new QR code",
+						"repair",
+					),
+				);
+			} else if (item.id === "logout") {
+				stack.push(
+					confirm(
+						"Log out of WhatsApp?",
+						"Pi is removed from the phone's Linked devices. You'll need to scan a QR code again to use it.",
+						"Yes, log out",
+						"logout",
+					),
+				);
+			}
+		},
+	});
 }

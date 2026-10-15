@@ -174,6 +174,10 @@ export class Media implements MediaHandler {
 		const toSpeak = tooLong ? `${spoken.slice(0, MAX_SPOKEN_CHARS).replace(/\s+\S*$/, "")}… The rest is in the text message.` : spoken;
 		void this.deps.connection.presence(chatJid, "recording");
 		try {
+			const voice = this.deps.voice.voiceSpec(language);
+			if (voice && !this.deps.voice.models.isInstalled(voice)) {
+				await this.deps.queue.sendText(chatJid, `⏳ Getting the voice ready (one-time download, ~${voice.approxMB} MB)…`);
+			}
 			const note = await this.deps.voice.speak(toSpeak, language);
 			await this.deps.queue.enqueue(chatJid, { audio: note.audio, ptt: true, seconds: note.seconds, mimetype: "audio/ogg; codecs=opus" });
 		} catch (error) {

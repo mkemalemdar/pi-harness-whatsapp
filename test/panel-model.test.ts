@@ -1,119 +1,163 @@
 import { describe, expect, it } from "vitest";
 import {
 	ALWAYS_ON,
-	applyLanguageToggle,
-	applyRowChange,
+	applyChoice,
+	applyLanguageSelection,
 	applyVoiceChoice,
 	buildRows,
 	contactsSummary,
 	formatSpeed,
+	languageChecklist,
 	OFF,
 	ON,
-	voiceRows,
+	type PanelState,
+	speechFilesSummary,
 } from "../src/panel-model.ts";
 import { addLanguage, defaultSettings, MIRROR } from "../src/settings.ts";
 
-const rowsFor = (enabled = false) => {
+const speech = { installed: new Set(["sherpa-onnx-whisper-base"]), missingCount: 0, unusedCount: 2, diskMB: 320 };
+
+const freshSettings = () => {
 	const settings = defaultSettings();
 	addLanguage(settings, "tr");
-	return { settings, rows: buildRows({ settings, enabled, connection: "off" }) };
+	return settings;
 };
 
-describe("buildRows", () => {
-	it("shows WhatsApp first and the final reply as locked", () => {
-		const { rows } = rowsFor(true);
-		expect(rows[0]).toMatchObject({ id: "whatsapp", currentValue: ON });
-		expect(rows[1]).toMatchObject({ id: "replies.final", currentValue: ALWAYS_ON, values: [ALWAYS_ON] });
-	});
+const stateFor = (enabled = false): PanelState => ({ settings: freshSettings(), enabled, connection: "off", speech });
 
-	it("offers mirror me plus every enabled language as reply language", () => {
-		const { rows } = rowsFor();
-		expect(rows.find((row) => row.id === "replyLanguage")?.values).toEqual([
-			"mirror me",
-			"English",
-			"Türkçe (Turkish)",
+describe("buildRows", () => {
+	it("groups rows into the four sections in order", () => {
+		const rows = buildRows(stateFor());
+		expect(rows.filter((row) => row.kind === "header").map((row) => row.label)).toEqual([
+			"CONNECTION",
+			"REPLIES",
+			"LANGUAGES",
+			"TECHNICAL",
+		]);
+		expect(rows.map((row) => row.id)).toEqual([
+			"header:connection",
+			"whatsapp",
+			"connection",
+			"contacts",
+			"commandAccess",
+			"askAtSessionStart",
+			"header:replies",
+			"replies.final",
+			"voiceMode",
+			"replies.interim",
+			"replies.toolActivity",
+			"replies.touchedFiles",
+			"replies.summary",
+			"forwardToolImages",
+			"header:languages",
+			"replyLanguage",
+			"languages",
+			"defaultLanguage",
+			"voices",
+			"header:technical",
+			"speechModel",
+			"voiceSpeed",
+			"speechFiles",
 		]);
 	});
 
-	it("summarises languages and voices", () => {
-		const { rows } = rowsFor();
-		expect(rows.find((row) => row.id === "languages")?.currentValue).toBe("English, Türkçe (Turkish)");
-		expect(rows.find((row) => row.id === "voices")?.currentValue).toBe("Amy, DFKI");
+	it("gives every row a description and every choice row its options", () => {
+		for (const row of buildRows(stateFor())) {
+			expect(row.description.length, row.id).toBeGreaterThan(10);
+			if (row.kind === "choice") expect(row.choices?.length, row.id).toBeGreaterThan(0);
+		}
+	});
+
+	it("uses the new names and marks the current choice", () => {
+		const rows = buildRows(stateFor(true));
+		const byId = (id: string) => rows.find((row) => row.id === id)!;
+		expect(byId("whatsapp")).toMatchObject({ label: "WhatsApp (this session)", current: ON });
+		expect(byId("replies.final")).toMatchObject({ currentValue: ALWAYS_ON });
+		expect(byId("voiceMode")).toMatchObject({ label: "Reply type", currentValue: "mirror me" });
+		expect(byId("voiceMode").choices?.map((choice) => choice.label)).toEqual(["mirror me", "text", "voice", "voice + text"]);
+		expect(byId("replyLanguage").choices?.map((choice) => choice.label)).toEqual(["mirror me", "English", "Türkçe (Turkish)"]);
+		expect(byId("defaultLanguage")).toMatchObject({ label: "Fallback language", currentValue: "English" });
+		expect(byId("voices").currentValue).toBe("Amy, DFKI");
+		expect(byId("forwardToolImages")).toMatchObject({ label: "Auto-send tool images", currentValue: OFF });
+	});
+
+	it("shows which speech-to-text models are on disk", () => {
+		const choices = buildRows(stateFor()).find((row) => row.id === "speechModel")!.choices!;
+		expect(choices[0]?.detail).toBe("✓ on disk · ~1.0 GB RAM");
+		expect(choices[2]?.detail).toBe("564 MB · ~2.9 GB RAM");
 	});
 });
 
-describe("applyRowChange", () => {
-	it("maps labels back to values", () => {
-		const { settings } = rowsFor();
-		applyRowChange(settings, "voiceMode", "voice + text");
-		applyRowChange(settings, "speechModel", "accurate (turbo)");
-		applyRowChange(settings, "replyLanguage", "Türkçe (Turkish)");
-		applyRowChange(settings, "replies.summary", ON);
-		applyRowChange(settings, "commandAccess", "all allowed contacts");
-		applyRowChange(settings, "forwardToolImages", ON);
-		applyRowChange(settings, "voiceSpeed", "1,15");
+describe("applyChoice", () => {
+	it("applies values from the submenus", () => {
+		const settings = freshSettings();
+		applyChoice(settings, "voiceMode", "voice+text");
+		applyChoice(settings, "speechModel", "turbo");
+		applyChoice(settings, "replyLanguage", "tr");
+		applyChoice(settings, "replies.summary", ON);
+		applyChoice(settings, "commandAccess", "allowed");
+		applyChoice(settings, "forwardToolImages", ON);
+		applyChoice(settings, "voiceSpeed", "1,2");
+		applyChoice(settings, "defaultLanguage", "tr");
 		expect(settings).toMatchObject({
 			voiceMode: "voice+text",
 			speechModel: "turbo",
 			replyLanguage: "tr",
 			commandAccess: "allowed",
 			forwardToolImages: true,
-			voiceSpeed: 1.15,
+			voiceSpeed: 1.2,
+			languages: ["tr", "en"],
 		});
 		expect(settings.replies.summary).toBe(true);
 	});
 
-	it("falls back to mirror me for an unknown language label", () => {
-		const { settings } = rowsFor();
-		applyRowChange(settings, "replyLanguage", "Klingon");
+	it("ignores unknown values and doesn't treat the WhatsApp row as a setting", () => {
+		const settings = freshSettings();
+		applyChoice(settings, "replyLanguage", "xx");
+		applyChoice(settings, "speechModel", "huge");
 		expect(settings.replyLanguage).toBe(MIRROR);
-	});
-
-	it("does not treat the WhatsApp row as a setting", () => {
-		const { settings } = rowsFor();
-		expect(applyRowChange(settings, "whatsapp", OFF)).toBe(false);
+		expect(settings.speechModel).toBe("base");
+		expect(applyChoice(settings, "whatsapp", OFF)).toBe(false);
 	});
 });
 
-describe("submenus", () => {
-	it("toggles languages but keeps the last one", () => {
-		const settings = defaultSettings();
-		expect(applyLanguageToggle(settings, "de", ON)).toBe(true);
-		expect(applyLanguageToggle(settings, "en", OFF)).toBe(true);
-		expect(applyLanguageToggle(settings, "de", OFF)).toBe(false);
-		expect(settings.languages).toEqual(["de"]);
+describe("languages", () => {
+	it("lists enabled languages first, ticked", () => {
+		const list = languageChecklist(stateFor().settings);
+		expect(list.slice(0, 3)).toEqual([
+			{ id: "en", label: "English", checked: true },
+			{ id: "tr", label: "Türkçe (Turkish)", checked: true },
+			{ id: "de", label: "Deutsch (German)", checked: false },
+		]);
 	});
 
-	it("picks a voice by its short label", () => {
-		const { settings } = rowsFor();
-		expect(voiceRows(settings)[1]?.values).toEqual(["DFKI", "Fahrettin", "Fettah"]);
-		applyVoiceChoice(settings, "tr", "Fettah");
+	it("keeps order for kept languages, appends new ones, and never empties", () => {
+		const settings = freshSettings();
+		settings.replyLanguage = "en";
+		applyLanguageSelection(settings, ["tr", "de"]);
+		expect(settings.languages).toEqual(["tr", "de"]);
+		expect(settings.voices).toEqual({ tr: "tr_TR-dfki-medium", de: "de_DE-thorsten-medium" });
+		expect(settings.replyLanguage).toBe(MIRROR);
+		applyLanguageSelection(settings, []);
+		expect(settings.languages).toEqual(["tr", "de"]);
+	});
+
+	it("only accepts voices of that language", () => {
+		const settings = freshSettings();
+		applyVoiceChoice(settings, "tr", "tr_TR-fettah-medium");
+		applyVoiceChoice(settings, "tr", "en_US-amy-medium");
 		expect(settings.voices.tr).toBe("tr_TR-fettah-medium");
 	});
 });
 
-describe("formatting", () => {
-	it("formats speeds", () => {
+describe("summaries", () => {
+	it("formats speeds, contacts and speech files", () => {
 		expect(formatSpeed(1)).toBe("1.0");
-		expect(formatSpeed(0.9)).toBe("0.9");
 		expect(formatSpeed(1.15)).toBe("1.15");
-	});
-
-	it("summarises contacts", () => {
 		const settings = defaultSettings();
 		expect(contactsSummary(settings)).toBe("none yet");
 		settings.contacts = [{ id: "905551234567", name: "Alex", owner: true }, { id: "4155551212" }];
 		expect(contactsSummary(settings)).toBe("2 allowed · owner: Alex");
-	});
-});
-
-describe("default language", () => {
-	it("moves the picked language to the front", () => {
-		const settings = defaultSettings();
-		addLanguage(settings, "tr");
-		applyRowChange(settings, "defaultLanguage", "Türkçe (Turkish)");
-		expect(settings.languages).toEqual(["tr", "en"]);
-		const rows = buildRows({ settings, enabled: false, connection: "off" });
-		expect(rows.find((row) => row.id === "defaultLanguage")?.currentValue).toBe("Türkçe (Turkish)");
+		expect(speechFilesSummary(speech)).toBe("1 on disk · 320 MB · nothing missing · 2 unused");
 	});
 });

@@ -3,9 +3,11 @@
  * models on first use (and in the background when settings change).
  */
 
-import { getLanguage, languageLabel } from "../languages.ts";
+import { getLanguage, LANGUAGES, languageLabel } from "../languages.ts";
 import { createLogger } from "../log.ts";
-import type { GlobalSettings, SettingsStore } from "../settings.ts";
+import type { GlobalSettings, SettingsStore, SpeechModel } from "../settings.ts";
+
+const SPEECH_MODEL_NAMES: Record<SpeechModel, string> = { base: "fast (base)", small: "balanced (small)", turbo: "accurate (turbo)" };
 import { decodeToSamples, encodeVoiceNote } from "./audio.ts";
 import { SpeechEngine } from "./engine.ts";
 import { detectLanguage } from "./language.ts";
@@ -84,6 +86,34 @@ export class VoiceService {
 
 	missingModels(): ModelSpec[] {
 		return this.neededModels().filter((spec) => !this.models.isInstalled(spec));
+	}
+
+	/** A readable name, e.g. "Ryan (English)" or "speech-to-text: balanced (small)". */
+	describe(spec: ModelSpec): string {
+		if (spec.kind === "stt") {
+			const size = (Object.keys(SPEECH_MODEL_SPECS) as SpeechModel[]).find((key) => SPEECH_MODEL_SPECS[key].name === spec.name);
+			return `speech-to-text: ${size ? SPEECH_MODEL_NAMES[size] : spec.name}`;
+		}
+		const voiceId = spec.name.replace(/^vits-piper-/, "");
+		for (const language of LANGUAGES) {
+			const voice = language.voices.find((option) => option.id === voiceId);
+			if (voice) return `${voice.label.replace(/ \(.*\)$/, "")} (${language.name})`;
+		}
+		return voiceId;
+	}
+
+	/** Name, label, kind and size (real size on disk, or the download size). */
+	file(spec: ModelSpec, onDisk: boolean): { name: string; label: string; kind: "stt" | "tts"; sizeMB: number } {
+		const sizeMB = onDisk ? Math.round(this.models.sizeOf(spec) / 1e6) : spec.approxMB;
+		return { name: spec.name, label: this.describe(spec), kind: spec.kind, sizeMB };
+	}
+
+	/** Speaks with a specific voice (used for samples). */
+	async speakWith(text: string, voiceId: string): Promise<{ audio: Buffer; seconds: number }> {
+		const spec = voiceModelSpec(voiceId);
+		await this.models.ensure(spec);
+		const spoken = await this.engine.speak(this.models.piperFiles(spec), text, this.settings.get().voiceSpeed);
+		return encodeVoiceNote(spoken.samples, spoken.sampleRate);
 	}
 
 	/** Voice note audio → text and language. */

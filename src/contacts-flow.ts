@@ -1,5 +1,5 @@
 /**
- * Dialog flow for "Allowed contacts": pick from recent chats, add a number,
+ * Dialog flow for "Allowed chats": pick from recent chats, add a number,
  * rename, remove, and mark the owner.
  */
 
@@ -36,7 +36,7 @@ export async function contactsFlow(
 	for (;;) {
 		const contacts = store.get().contacts;
 		const rows = contacts.map((contact) => `${contact.owner ? "★ " : "  "}${contactLabel(contact)}`);
-		const choice = await ctx.ui.select("Allowed contacts (★ = owner)", [...rows, ADD_RECENT, ADD_NUMBER, BACK]);
+		const choice = await ctx.ui.select("Allowed chats (★ = owner)", [...rows, ADD_RECENT, ADD_NUMBER, BACK]);
 		if (choice === undefined || choice === BACK) return;
 
 		if (choice === ADD_RECENT) {

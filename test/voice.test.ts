@@ -3,6 +3,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AnyMessageContent } from "baileys";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { getLanguage } from "../src/languages.ts";
 import { Media, safeFileName } from "../src/media.ts";
 import { addLanguage, SettingsStore } from "../src/settings.ts";
 import { decodeToSamples, encodeVoiceNote } from "../src/voice/audio.ts";
@@ -141,13 +142,15 @@ describe("Media.deliverReply", () => {
 const realModels = join(process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"), "pi-harness-whatsapp", "models");
 const store = new ModelStore(realModels);
 const installedWhisper = Object.values(SPEECH_MODEL_SPECS).find((spec) => existsSync(realModels) && store.isInstalled(spec));
-const haveModels = !!installedWhisper && store.isInstalled(voiceModelSpec("tr_TR-dfki-medium"));
+// Whichever Turkish voice is on disk.
+const turkishVoice = getLanguage("tr")!.voices.map((voice) => voiceModelSpec(voice.id)).find((spec) => existsSync(realModels) && store.isInstalled(spec));
+const haveModels = !!installedWhisper && !!turkishVoice;
 
 describe.skipIf(!haveModels)("speech worker (real models)", () => {
 	it("speaks Turkish and hears it back", async () => {
 		const engine = new SpeechEngine(4);
 		try {
-			const spoken = await engine.speak(store.piperFiles(voiceModelSpec("tr_TR-dfki-medium")), "Merhaba, bütün testler başarıyla geçti ve yeni sayfaya başlıyorum.", 1);
+			const spoken = await engine.speak(store.piperFiles(turkishVoice!), "Merhaba, bütün testler başarıyla geçti ve yeni sayfaya başlıyorum.", 1);
 			const note = await encodeVoiceNote(spoken.samples, spoken.sampleRate);
 			expect(note.audio.subarray(0, 4).toString()).toBe("OggS");
 			const heard = await engine.transcribe(store.whisperFiles(installedWhisper!), await decodeToSamples(note.audio));

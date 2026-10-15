@@ -3,13 +3,12 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AnyMessageContent } from "baileys";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getLanguage } from "../src/languages.ts";
 import { Media, safeFileName } from "../src/media.ts";
 import { addLanguage, SettingsStore } from "../src/settings.ts";
 import { decodeToSamples, encodeVoiceNote } from "../src/voice/audio.ts";
 import { SpeechEngine } from "../src/voice/engine.ts";
 import { chooseSpeechLanguage, detectLanguage } from "../src/voice/language.ts";
-import { ModelStore, SPEECH_MODEL_SPECS, voiceModelSpec } from "../src/voice/models.ts";
+import { ModelStore, RUNTIME_SPEC, SUPERTONIC_SPEC, WHISPER_SPEC } from "../src/voice/models.ts";
 import type { VoiceService } from "../src/voice/service.ts";
 import { SendQueue } from "../src/wa/outbound.ts";
 
@@ -46,14 +45,10 @@ class FakeVoice {
 		this.spoken.push({ text, language });
 		return { audio: Buffer.from("ogg"), seconds: 2 };
 	}
-	missingModels() {
-		return [];
-	}
 	installed = true;
-	voiceSpec(language: string) {
-		return voiceModelSpec(`${language}-test-voice`);
+	missingModels() {
+		return this.installed ? [] : [SUPERTONIC_SPEC];
 	}
-	models = { isInstalled: () => this.installed };
 }
 
 describe("Media.deliverReply", () => {
@@ -123,7 +118,7 @@ describe("Media.deliverReply", () => {
 	it("says so when a voice has to be downloaded first", async () => {
 		voice.installed = false;
 		await media.deliverReply("c", "Tamam.", { voiceIn: true, language: "tr" });
-		expect((sent[0] as { text: string }).text).toBe("⏳ Getting the voice ready (one-time download, ~67 MB)…");
+		expect((sent[0] as { text: string }).text).toBe(`⏳ Getting the voice ready (one-time download, ~${SUPERTONIC_SPEC.approxMB} MB)…`);
 		expect("audio" in sent[1]!).toBe(true);
 	});
 
@@ -141,28 +136,25 @@ describe("Media.deliverReply", () => {
 // Tests run with a temporary data folder; the real speech files are only read here, never changed.
 const realModels = join(process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"), "pi-harness-whatsapp", "models");
 const store = new ModelStore(realModels);
-const installedWhisper = Object.values(SPEECH_MODEL_SPECS).find((spec) => existsSync(realModels) && store.isInstalled(spec));
-// Whichever Turkish voice is on disk.
-const turkishVoice = getLanguage("tr")!.voices.map((voice) => voiceModelSpec(voice.id)).find((spec) => existsSync(realModels) && store.isInstalled(spec));
-const haveModels = !!installedWhisper && !!turkishVoice;
+const haveModels = existsSync(realModels) && [RUNTIME_SPEC, WHISPER_SPEC, SUPERTONIC_SPEC].every((spec) => store.isInstalled(spec));
 
-describe.skipIf(!haveModels)("speech worker (real models)", () => {
+describe.skipIf(!haveModels)("speech engine (real models)", () => {
 	it("speaks Turkish and hears it back", async () => {
-		const engine = new SpeechEngine(4);
+		const engine = new SpeechEngine(() => store.dir(RUNTIME_SPEC));
 		try {
-			const spoken = await engine.speak(store.piperFiles(turkishVoice!), "Merhaba, bütün testler başarıyla geçti ve yeni sayfaya başlıyorum.", 1);
+			const text = "Merhaba, bütün testler başarıyla geçti ve yeni sayfaya başlıyorum.";
+			const spoken = await engine.speak(store.dir(SUPERTONIC_SPEC), text, "tr", "F1", 1);
 			const note = await encodeVoiceNote(spoken.samples, spoken.sampleRate);
 			expect(note.audio.subarray(0, 4).toString()).toBe("OggS");
-			const heard = await engine.transcribe(store.whisperFiles(installedWhisper!), await decodeToSamples(note.audio));
-			expect(heard.language).toBe("tr");
-			// Piper's output varies a little per run and base may garble words; half must come back.
+			const heard = await engine.transcribe(store.dir(WHISPER_SPEC), await decodeToSamples(note.audio));
+			expect(detectLanguage(heard.text, ["en", "tr"])).toBe("tr");
 			const expected = ["merhaba", "bütün", "testler", "başarıyla", "geçti", "yeni", "sayfaya", "başlıyorum"];
 			const got = heard.text.toLocaleLowerCase("tr");
-			expect(expected.filter((word) => got.includes(word)).length).toBeGreaterThanOrEqual(4);
+			expect(expected.filter((word) => got.includes(word)).length).toBeGreaterThanOrEqual(6);
 		} finally {
 			await engine.unload();
 		}
-	}, 60_000);
+	}, 120_000);
 });
 
 describe("cleanInbox", () => {

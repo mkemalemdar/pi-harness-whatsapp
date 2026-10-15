@@ -28,7 +28,7 @@ import { contactJid, phoneJid } from "./wa/jid.ts";
 import { SendQueue } from "./wa/outbound.ts";
 import { PollMenus } from "./wa/polls.ts";
 import { RecentsStore } from "./wa/recents.ts";
-import { type ModelSpec, voiceModelSpec } from "./voice/models.ts";
+import { type ModelSpec, RUNTIME_SPEC, SUPERTONIC_SPEC } from "./voice/models.ts";
 import { VoiceService } from "./voice/service.ts";
 
 export const STATUS_KEY = "whatsapp";
@@ -304,13 +304,10 @@ export class Controller implements PanelHost, CommandEnv {
 		const owner = this.settings.get().contacts.find((contact) => contact.owner);
 		if (!owner) throw new Error("No owner set yet: add yourself in Allowed chats first.");
 		if (!this.session.enabled || !this.connection.isOpen()) throw new Error("WhatsApp isn't connected, so the sample can't be sent.");
-		const spec = voiceModelSpec(voiceId);
-		if (!this.voice.models.isInstalled(spec)) {
-			onStatus("Downloading the voice (67 MB)…");
-			await this.voice.models.ensure(spec);
-		}
+		const missing = [RUNTIME_SPEC, SUPERTONIC_SPEC].filter((spec) => !this.voice.models.isInstalled(spec));
+		if (missing.length > 0) onStatus(`Downloading the voices (~${missing.reduce((sum, spec) => sum + spec.approxMB, 0)} MB)…`);
+		const note = await this.voice.speakWith(getLanguage(language)?.sample ?? "Hello!", language, voiceId);
 		onStatus("Sending the sample…");
-		const note = await this.voice.speakWith(getLanguage(language)?.sample ?? "Hello!", voiceId);
 		const jid = contactJid(owner);
 		const result = await this.queue.enqueue(jid, { audio: note.audio, ptt: true, seconds: note.seconds, mimetype: "audio/ogg; codecs=opus" });
 		if (!result) throw new Error("WhatsApp didn't accept the sample (see the log).");

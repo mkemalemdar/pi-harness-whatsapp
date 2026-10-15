@@ -15,7 +15,7 @@ import {
 } from "../src/panel-model.ts";
 import { addLanguage, defaultSettings, MIRROR } from "../src/settings.ts";
 
-const speech = { installed: new Set(["sherpa-onnx-whisper-base"]), missingCount: 0, unusedCount: 2, diskMB: 320 };
+const speech = { installed: new Set(["whisper-large-v3-turbo-int8-ov"]), missingCount: 0, unusedCount: 2, diskMB: 320 };
 
 const freshSettings = () => {
 	const settings = defaultSettings();
@@ -56,7 +56,6 @@ describe("buildRows", () => {
 			"defaultLanguage",
 			"voices",
 			"header:technical",
-			"speechModel",
 			"voiceSpeed",
 			"speechFiles",
 		]);
@@ -78,22 +77,16 @@ describe("buildRows", () => {
 		expect(byId("voiceMode").choices?.map((choice) => choice.label)).toEqual(["mirror me", "text", "voice", "voice + text"]);
 		expect(byId("replyLanguage").choices?.map((choice) => choice.label)).toEqual(["mirror me", "English", "Türkçe (Turkish)"]);
 		expect(byId("defaultLanguage")).toMatchObject({ label: "Fallback language", currentValue: "English" });
-		expect(byId("voices").currentValue).toBe("Amy, DFKI");
+		expect(byId("voices").currentValue).toBe("F1, F1");
 		expect(byId("forwardToolImages")).toMatchObject({ label: "Auto-send tool images", currentValue: OFF });
 	});
 
-	it("shows which speech-to-text models are on disk", () => {
-		const choices = buildRows(stateFor()).find((row) => row.id === "speechModel")!.choices!;
-		expect(choices[0]?.detail).toBe("✓ on disk · ~1.0 GB RAM");
-		expect(choices[2]?.detail).toBe("564 MB · ~2.9 GB RAM");
-	});
 });
 
 describe("applyChoice", () => {
 	it("applies values from the submenus", () => {
 		const settings = freshSettings();
 		applyChoice(settings, "voiceMode", "voice+text");
-		applyChoice(settings, "speechModel", "turbo");
 		applyChoice(settings, "replyLanguage", "tr");
 		applyChoice(settings, "replies.summary", ON);
 		applyChoice(settings, "commandAccess", "allowed");
@@ -102,7 +95,6 @@ describe("applyChoice", () => {
 		applyChoice(settings, "defaultLanguage", "tr");
 		expect(settings).toMatchObject({
 			voiceMode: "voice+text",
-			speechModel: "turbo",
 			replyLanguage: "tr",
 			commandAccess: "allowed",
 			forwardToolImages: true,
@@ -115,9 +107,7 @@ describe("applyChoice", () => {
 	it("ignores unknown values and doesn't treat the WhatsApp row as a setting", () => {
 		const settings = freshSettings();
 		applyChoice(settings, "replyLanguage", "xx");
-		applyChoice(settings, "speechModel", "huge");
 		expect(settings.replyLanguage).toBe(MIRROR);
-		expect(settings.speechModel).toBe("base");
 		expect(applyChoice(settings, "whatsapp", OFF)).toBe(false);
 	});
 });
@@ -137,17 +127,17 @@ describe("languages", () => {
 		settings.replyLanguage = "en";
 		applyLanguageSelection(settings, ["tr", "de"]);
 		expect(settings.languages).toEqual(["tr", "de"]);
-		expect(settings.voices).toEqual({ tr: "tr_TR-dfki-medium", de: "de_DE-thorsten-medium" });
+		expect(settings.voices).toEqual({ tr: "F1", de: "F1" });
 		expect(settings.replyLanguage).toBe(MIRROR);
 		applyLanguageSelection(settings, []);
 		expect(settings.languages).toEqual(["tr", "de"]);
 	});
 
-	it("only accepts voices of that language", () => {
+	it("only accepts known voices", () => {
 		const settings = freshSettings();
-		applyVoiceChoice(settings, "tr", "tr_TR-fettah-medium");
+		applyVoiceChoice(settings, "tr", "M3");
 		applyVoiceChoice(settings, "tr", "en_US-amy-medium");
-		expect(settings.voices.tr).toBe("tr_TR-fettah-medium");
+		expect(settings.voices.tr).toBe("M3");
 	});
 });
 

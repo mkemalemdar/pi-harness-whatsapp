@@ -378,7 +378,7 @@ export class Bridge {
 			"- Your final answer is sent to them automatically. Don't use a tool just to reply.",
 			"- Keep answers short and chat-friendly. Summarize long code, and write files to disk instead.",
 			"- Voice notes arrive already transcribed, e.g. `[WhatsApp · Name · voice note · your reply is spoken to Name]`. Transcripts can contain misheard words.",
-			"- When the label says \"your reply is spoken\", your answer becomes voice notes automatically (long answers are split into parts): write plain speech, without code, tables or links.",
+			"- When the label says \"your reply is spoken\", your answer becomes voice notes automatically (long answers are split into parts). Write it exactly as it should be said: no symbols, units or abbreviations (\"13 derece\", not \"13°C\"; \"yüzde 40\", not \"%40\"; \"25 kilometers\", not \"25 km\"), and no code, tables, links or emoji.",
 			"- Group labels look like `[WhatsApp group \"Team\" · Name · your reply goes to the group]`: answer the group.",
 			`- ${language}`,
 		].join("\n");

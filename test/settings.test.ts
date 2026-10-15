@@ -28,15 +28,14 @@ describe("normalizeSettings", () => {
 			speechModel: "huge",
 			voiceSpeed: 9,
 			languages: ["tr", "xx", "en", "tr"],
-			voices: { tr: "tr_TR-fettah-medium", en: "not-a-voice" },
+			voices: { tr: "M2", en: "not-a-voice" },
 			replyLanguage: "de",
 			replies: { summary: true, interim: "yes" },
 		});
 		expect(settings.voiceMode).toBe("voice+text");
-		expect(settings.speechModel).toBe("base");
 		expect(settings.voiceSpeed).toBe(2);
 		expect(settings.languages).toEqual(["tr", "en"]);
-		expect(settings.voices).toEqual({ tr: "tr_TR-fettah-medium", en: "en_US-amy-medium" });
+		expect(settings.voices).toEqual({ tr: "M2", en: "F1" });
 		expect(settings.replyLanguage).toBe(MIRROR);
 		expect(settings.replies).toEqual({ summary: true, interim: false, touchedFiles: false, toolActivity: false, terminal: false });
 	});
@@ -83,7 +82,7 @@ describe("languages", () => {
 		addLanguage(settings, "tr");
 		addLanguage(settings, "xx");
 		expect(settings.languages).toEqual(["en", "tr"]);
-		expect(settings.voices.tr).toBe("tr_TR-dfki-medium");
+		expect(settings.voices.tr).toBe("F1");
 
 		settings.replyLanguage = "tr";
 		expect(removeLanguage(settings, "tr")).toBe(true);

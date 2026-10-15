@@ -11,7 +11,7 @@ Talk to the [Pi coding agent](https://pi.dev) from WhatsApp: text, voice notes, 
 - **Scan a QR code once and you're in.** Pi runs as a linked device of a WhatsApp number. The login is saved, and Pi reconnects on its own.
 - **Replies are automatic.** Pi's final answer is always sent back. The model doesn't have to call a tool.
 - **You choose what else you get:** a summary line (`✅ 4/6 tool calls ok · ⏱ 2m 14s`), in-between messages, the list of touched files, and a live tool-activity message.
-- **Voice notes both ways, on your own CPU.** Whisper understands them and Piper speaks the replies, through [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx). No GPU or cloud service needed, and many languages are supported.
+- **Voice notes both ways, on your own CPU.** [Whisper](https://github.com/openai/whisper) turbo understands them and [Supertonic 3](https://huggingface.co/Supertone/supertonic-3) speaks the replies, both through Intel's [OpenVINO](https://github.com/openvinotoolkit/openvino). No GPU or cloud service needed, in 15 languages.
 - **Control Pi from WhatsApp** with commands and poll menus: `/model`, `/think`, `/compact`, `/stop`, `/new`, `/status`, …
 - **A real off switch.** Off means disconnected: nothing is read or sent, and the WhatsApp tools disappear from the model.
 
@@ -21,7 +21,8 @@ Talk to the [Pi coding agent](https://pi.dev) from WhatsApp: text, voice notes, 
 
 - Pi 1.2 or newer
 - `ffmpeg` on the PATH (for voice notes): `sudo apt install ffmpeg`
-- Linux x64/arm64, macOS or Windows (sherpa-onnx ships ready-made builds)
+- For voice notes: Linux (x64 or ARM64), Windows (x64) or macOS on Apple Silicon. OpenVINO has no build for Intel Macs or Windows on ARM; text works there, voice notes don't.
+- For voice notes: about 3.5 GB of free RAM while they're being processed, and 1.6 GB of disk
 
 ## Install
 
@@ -68,11 +69,10 @@ Every row opens a small menu with the choices and a short explanation. Nothing c
 | | Stats (tools · time) | On · **Off**. A line like `✅ 4/6 tool calls ok · ⏱ 2m 14s`. |
 | | Auto-send tool images | On · **Off**. Every image a tool makes while answering you (e.g. browser screenshots). You can always ask Pi to send a specific image instead. |
 | Languages | Reply language | **Mirror me** (the language you used) or one of your languages. |
-| | My languages | Tick the languages you use (**English**). Each gets a voice for spoken replies. |
+| | My languages | Tick the languages you use (**English**). See [Voice](#voice) for the 15 languages. |
 | | Fallback language | Used only when Pi can't tell which language to use (**the first of your languages**). |
-| | Voice per language | Which voice speaks each language. "Send me a sample" sends a short voice note to your WhatsApp first. |
-| Technical | Speech-to-text model | **Fast (base)** · balanced (small) · accurate (turbo). See below. |
-| | Voice reply speed | 0.9 · **1.0** · 1.2 · custom (0.5–2.0). |
+| | Voice per language | Which voice speaks each language: one of 10 voices, **F1**–F5 (female) and M1–M5 (male), the same list for every language. "Send me a sample" sends a short voice note to your WhatsApp first. |
+| Technical | Voice reply speed | 0.9 · **1.0** · 1.2 · custom (0.5–2.0). |
 | | Speech files | Download what your settings need, or delete unused files (shown as a ticked list; untick what you want to keep). |
 
 Speech files are never downloaded just because you look at a choice. When you close the panel and your new settings need files, Pi asks once: download now, or later when first needed.
@@ -106,43 +106,37 @@ Commands are handled by the extension and never reach the model. Send `/help` to
 
 Voice notes are transcribed on your machine and given to Pi with a label, e.g. `[WhatsApp · Name · voice note · your reply is spoken to Name] …`. When the reply will be spoken, the model is told so, and writes plain speech. Long answers are read in full as several voice notes (up to ~10 minutes; anything longer also comes as text). Answers that are mostly code come as text too, since code can't be read aloud. With **Mirror me**, Pi answers in the language you used, and the voice reply uses that language's voice.
 
-Speech files download the first time they're needed, and the chat is told while it waits. If you change languages, voices or the speech model in `/whatsapp`, Pi asks when you close the panel whether to download the new files now. One multilingual Whisper model covers every language. Each spoken language needs one Piper voice (~67 MB download).
+Supported languages: **English, Turkish, German, French, Spanish, Italian, Portuguese, Dutch, Polish, Russian, Ukrainian, Arabic, Hindi, Swedish and Finnish**. Pi understands and speaks all of them with the same two models, so adding a language downloads nothing.
 
-Measured on an Intel i5-13500 (CPU only, 8 threads). For each language, a ~20-second voice note with the same short developer update was spoken by that language's Piper voice. Each model transcribed every note 5 times; the five runs always gave the same transcript. Times are medians. Wrong words are counted against the script, ignoring punctuation and capitals. Real voices and background noise will cause more errors.
-
-| Speech model | Download | RAM (peak) |
+| What | Model | Download |
 |---|---|---|
-| **Fast (base)**, default | 208 MB | ~1.0 GB |
-| Balanced (small) | 639 MB | ~1.6 GB |
-| Accurate (turbo) | 564 MB | ~2.9 GB |
+| Understanding voice notes | Whisper large-v3-turbo, int8, [exported for OpenVINO by Intel](https://huggingface.co/OpenVINO/whisper-large-v3-turbo-int8-ov) | 828 MB |
+| Speaking replies | [Supertonic 3](https://huggingface.co/Supertone/supertonic-3) by Supertone (10 voices) | 401 MB |
+| Running both | Intel's OpenVINO for Node | 325 MB |
 
-How long each model took, and the share of words it got wrong:
+Everything downloads the first time it's needed, and the chat is told while it waits. If you change languages, voices or the reply type in `/whatsapp`, Pi asks when you close the panel whether to download the new files now. Models are unloaded after 10 minutes without voice work, so idle RAM use is zero. While voice notes are being handled, Pi used about 3.4 GB of RAM in total in the test below.
 
-| Language | Note length | Base: time · wrong words | Small: time · wrong words | Turbo: time · wrong words |
-|---|---|---|---|---|
-| Turkish | 21 s | 2.9 s · 16 % | 8.7 s · 14 % | 7.7 s · 7 % |
-| English | 22 s | 2.0 s · 0 % | 5.2 s · 0 % | 5.3 s · 0 % |
-| Spanish | 19 s | 2.3 s · 3 % | 10.2 s · 0 % | 6.7 s · 0 % |
-| Polish | 22 s | 3.0 s · 4 % | 10.1 s · 0 % | 8.4 s · 0 % |
-| Portuguese | 18 s | 2.2 s · 7 % | 6.2 s · 9 % | 7.6 s · 2 % |
-| German | 20 s | 3.0 s · 16 % | 9.7 s · 6 % | 7.6 s · 3 % |
-| French | 21 s | 3.0 s · 10 % | 9.0 s · 10 % | 7.9 s · 3 % |
-| Dutch | 25 s | 3.0 s · 10 % | 8.6 s · 3 % | 7.6 s · 3 % |
-| Russian | 21 s | 2.5 s · 6 % | 7.7 s · 4 % | 7.8 s · 4 % |
-| Swedish | 23 s | 2.6 s · 11 % | 7.8 s · 14 % | 7.1 s · 5 % |
-| Italian | 17 s | 2.2 s · 22 % | 7.6 s · 16 % | 7.2 s · 7 % |
-| Finnish | 22 s | 3.2 s · 32 % | 11.5 s · 22 % | 8.4 s · 8 % |
-| Ukrainian¹ | 19 s | 2.7 s · 40 % | 12.2 s · 26 % | 7.7 s · 13 % |
-| Arabic² | 28 s | 3.4 s · 64 % | 12.3 s · 51 % | 9.3 s · 47 % |
-| Persian³ | 19 s | 3.1 s · 92 % | 8.5 s · 78 % | 8.7 s · 66 % |
-| Hindi⁴ | 20 s | 2.9 s · 100 % | 13.0 s · 94 % | 7.9 s · 94 % |
+Measured on an Intel i5-13500, CPU only, on real recordings from Google's [FLEURS](https://huggingface.co/datasets/google/fleurs) dataset: 10 sentences per language, read by real people. Wrong words are counted against the dataset's transcript, ignoring punctuation and capitals; a number written as digits ("18") where the transcript spells it out counts as wrong. For the voice, Supertonic read a short sentence in each language and Whisper listened to it again.
 
-1. Tested with the only Ukrainian Piper voice that works, which is the lowest quality grade; part of the errors come from the voice.
-2. The note was longer than 28 s, so it was transcribed in two parts.
-3. Much of this is spelling: turbo wrote what was said in everyday spoken Persian (e.g. میتونن for می‌توانند), so the meaning was mostly right.
-4. Not usable yet: base writes Hindi in Urdu script, and small and turbo drop letters from Devanagari words.
+| Language | Wrong words | Time for an ~11 s voice note | Voice read back correctly |
+|---|---|---|---|
+| Turkish | 10 % | 2.7 s | ✓ |
+| English | 5 % | 2.3 s | ✓ |
+| Spanish | 2 % | 2.8 s | ✓ |
+| Portuguese | 3 % | 2.8 s | ✓ |
+| Italian | 4 % | 2.9 s | ✓ |
+| German | 4 % | 2.8 s | ✓ |
+| Dutch | 5 % | 2.8 s | ✓ |
+| Russian | 7 % | 2.8 s | ✓ |
+| Polish | 7 % | 2.8 s | 1 word off |
+| French | 8 % | 2.8 s | ✓ |
+| Ukrainian | 9 % | 2.9 s | ✓ |
+| Arabic | 9 % | 2.9 s | ✓ |
+| Finnish | 11 % | 2.8 s | ✓ |
+| Swedish | 12 % | 2.9 s | ✓ |
+| Hindi | 31 % | 3.2 s | 1 word off |
 
-Base was about 2.5–4.5× faster than the others. Small and turbo made fewer mistakes in most languages, and turbo had the fewest errors (or tied for fewest) in every language. Piper makes a ~7-second reply in under a second. Models are unloaded after 10 minutes without voice work, so idle RAM use is zero.
+Supertonic makes speech about 10× faster than real time, so a 20-second reply is ready in about 2 seconds. Symbols and units are hard for any voice to read ("13°C" is not "13 derece"), so when a reply will be spoken, Pi is told to write everything out as it should be said.
 
 Received files are saved in `~/.pi/agent/pi-harness-whatsapp/inbox/` (kept for 7 days), and Pi is told where they are.
 
@@ -167,7 +161,7 @@ Everything lives in `~/.pi/agent/pi-harness-whatsapp/`:
 |---|---|
 | `config.json` | Settings |
 | `auth/` | The WhatsApp login. Keep it private; deleting it means scanning a new QR code. |
-| `models/` | Speech models |
+| `models/` | Speech models and the OpenVINO engine that runs them |
 | `inbox/` | Files people sent (kept 7 days) |
 | `recents.json` | Recent chat ids and names, for picking contacts (no message text) |
 | `connection.lock` | Which Pi process holds the connection right now |
@@ -179,7 +173,7 @@ Everything lives in `~/.pi/agent/pi-harness-whatsapp/`:
 - **"needs a new QR scan":** WhatsApp logged the device out (for example, it was removed from Linked devices). Connection → Show a new QR code.
 - **"in use by Pi #…":** another Pi holds the connection; turn WhatsApp off there.
 - **Messages are ignored:** the sender isn't in Allowed chats. Pi shows a notice in the terminal the first time.
-- **Voice notes fail:** check that `ffmpeg -version` works. The first voice note waits for the speech model to download.
+- **Voice notes fail:** check that `ffmpeg -version` works. The first voice note waits for the speech files to download (about 1.6 GB). On Intel Macs and Windows on ARM, voice notes aren't available.
 - **More detail:** set `PI_HARNESS_WHATSAPP_DEBUG=1` before starting Pi, and check the log.
 
 ## Development
@@ -197,3 +191,5 @@ pi -ne -e .            # run Pi with only this extension
 ## License
 
 [MIT](LICENSE) © mkemalemdar
+
+The speech models are downloaded from their makers and keep their own licenses: Whisper (MIT, OpenAI), Supertonic 3 ([OpenRAIL-M](https://huggingface.co/Supertone/supertonic-3/blob/main/LICENSE), Supertone; free to use, with use restrictions such as not impersonating others without their consent), and OpenVINO (Apache-2.0, Intel).

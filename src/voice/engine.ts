@@ -1,114 +1,109 @@
 /**
- * Main-thread side of the speech worker: starts it on first use, queues
- * requests, and stops it after a while without work to give the RAM back.
+ * The speech engine: Whisper (speech-to-text) and Supertonic (text-to-speech),
+ * both running on OpenVINO on the CPU.
+ *
+ * OpenVINO does the heavy work on its own threads (the calls are async), so
+ * Pi's terminal stays responsive. Models load on first use and are released
+ * after 10 minutes without voice work. OpenVINO itself is loaded lazily from
+ * the folder it was downloaded to (see models.ts), so the extension loads fine
+ * before it is there.
  */
 
-import { availableParallelism } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { Worker } from "node:worker_threads";
+import { createRequire } from "node:module";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { createLogger } from "../log.ts";
-import type { PiperFiles, WhisperFiles } from "./models.ts";
+import { type OpenVino, Supertonic } from "./supertonic.ts";
 
-const log = createLogger("speech");
+const log = createLogger("engine");
 const IDLE_UNLOAD_MS = 10 * 60_000;
+const DEVICE = "CPU";
 
-interface Pending {
-	resolve(value: Record<string, unknown>): void;
-	reject(error: Error): void;
-}
-
-function workerPath(): string {
-	return join(dirname(fileURLToPath(import.meta.url)), "worker.cjs");
-}
-
-/** Leave a couple of cores for Pi and the rest of the machine. */
-export function defaultThreads(): number {
-	return Math.max(1, Math.min(8, availableParallelism() - 2));
+interface WhisperPipeline {
+	generate(samples: Float32Array, options?: { generationConfig?: Record<string, unknown> }): Promise<{ texts: string[] }>;
 }
 
 export class SpeechEngine {
-	private worker: Worker | undefined;
-	private nextId = 1;
-	private readonly pending = new Map<number, Pending>();
+	private whisper: { dir: string; pipeline: WhisperPipeline } | undefined;
+	private tts: { dir: string; engine: Supertonic } | undefined;
+	private loading = new Map<string, Promise<unknown>>();
 	private idleTimer: ReturnType<typeof setTimeout> | undefined;
 
-	constructor(private readonly threads = defaultThreads()) {}
+	/** `runtimeDir` holds node_modules/openvino-node and node_modules/openvino-genai-node. */
+	constructor(private readonly runtimeDir: () => string) {}
 
-	async transcribe(files: WhisperFiles, samples: Float32Array, language?: string): Promise<{ text: string; language?: string; ms: number }> {
-		const result = await this.request({ type: "transcribe", files, samples, threads: this.threads, ...(language ? { language } : {}) }, [
-			samples.buffer as ArrayBuffer,
-		]);
-		return {
-			text: String(result.text ?? ""),
-			...(typeof result.language === "string" ? { language: result.language } : {}),
-			ms: Number(result.ms ?? 0),
-		};
+	isLoaded(): boolean {
+		return !!this.whisper || !!this.tts;
 	}
 
-	async speak(files: PiperFiles, text: string, speed: number): Promise<{ samples: Float32Array; sampleRate: number; ms: number }> {
-		// Piper is fast; two threads are plenty and leave room for Whisper.
-		const result = await this.request({ type: "speak", files, text, speed, threads: Math.min(2, this.threads) });
-		return { samples: result.samples as Float32Array, sampleRate: Number(result.sampleRate), ms: Number(result.ms ?? 0) };
+	/** Speech → text. `language` forces a language (e.g. "tr"); otherwise Whisper detects it. */
+	async transcribe(modelDir: string, samples: Float32Array, language?: string): Promise<{ text: string; ms: number }> {
+		const pipeline = await this.loadWhisper(modelDir);
+		const started = Date.now();
+		const result = await pipeline.generate(samples, {
+			generationConfig: { task: "transcribe", ...(language ? { language: `<|${language}|>` } : {}) },
+		});
+		this.touch();
+		return { text: (result.texts[0] ?? "").replace(/\s+/g, " ").trim(), ms: Date.now() - started };
 	}
 
-	/** Stops the worker and frees the models' memory. */
+	/** Text → mono samples at the engine's sample rate. */
+	async speak(modelDir: string, text: string, language: string, voice: string, speed: number): Promise<{ samples: Float32Array; sampleRate: number }> {
+		const tts = await this.loadTts(modelDir);
+		const samples = await tts.speak(text, language, voice, speed);
+		this.touch();
+		return { samples, sampleRate: tts.sampleRate };
+	}
+
 	async unload(): Promise<void> {
 		if (this.idleTimer) clearTimeout(this.idleTimer);
 		this.idleTimer = undefined;
-		const worker = this.worker;
-		this.worker = undefined;
-		if (worker) await worker.terminate();
-		this.failAll(new Error("speech worker stopped"));
+		if (this.isLoaded()) log.info("unloading speech models");
+		// Dropping the references lets OpenVINO free the memory.
+		this.whisper = undefined;
+		this.tts = undefined;
 	}
 
-	isLoaded(): boolean {
-		return !!this.worker;
-	}
-
-	private request(message: Record<string, unknown>, transfer: ArrayBuffer[] = []): Promise<Record<string, unknown>> {
-		const worker = this.ensureWorker();
-		if (this.idleTimer) clearTimeout(this.idleTimer);
-		const id = this.nextId++;
-		return new Promise((resolve, reject) => {
-			this.pending.set(id, { resolve, reject });
-			worker.postMessage({ ...message, id }, transfer);
-		}).finally(() => this.scheduleUnload()) as Promise<Record<string, unknown>>;
-	}
-
-	private ensureWorker(): Worker {
-		if (this.worker) return this.worker;
-		const worker = new Worker(workerPath());
-		worker.unref();
-		worker.on("message", (message: { id: number; ok: boolean; error?: string }) => {
-			const waiting = this.pending.get(message.id);
-			if (!waiting) return;
-			this.pending.delete(message.id);
-			if (message.ok) waiting.resolve(message as unknown as Record<string, unknown>);
-			else waiting.reject(new Error(message.error ?? "speech failed"));
+	private async loadWhisper(dir: string): Promise<WhisperPipeline> {
+		if (this.whisper?.dir === dir) return this.whisper.pipeline;
+		return this.once(`whisper:${dir}`, async () => {
+			const started = Date.now();
+			// An async factory: it loads the model and returns a ready pipeline.
+			const entry = pathToFileURL(join(this.runtimeDir(), "node_modules", "openvino-genai-node", "dist", "index.js")).href;
+			const { WhisperPipeline } = (await import(entry)) as unknown as {
+				WhisperPipeline: (dir: string, device: string) => Promise<WhisperPipeline>;
+			};
+			const pipeline = await WhisperPipeline(dir, DEVICE);
+			this.whisper = { dir, pipeline };
+			log.info(`speech-to-text loaded in ${Date.now() - started}ms`);
+			return pipeline;
 		});
-		worker.on("error", (error) => {
-			log.error("speech worker crashed", error);
-			if (this.worker === worker) this.worker = undefined;
-			this.failAll(error instanceof Error ? error : new Error(String(error)));
-		});
-		worker.on("exit", (code) => {
-			if (this.worker === worker) this.worker = undefined;
-			if (code !== 0) this.failAll(new Error(`speech worker exited (${code})`));
-		});
-		this.worker = worker;
-		return worker;
 	}
 
-	private scheduleUnload(): void {
-		if (this.pending.size > 0) return;
+	private async loadTts(dir: string): Promise<Supertonic> {
+		if (this.tts?.dir === dir) return this.tts.engine;
+		return this.once(`tts:${dir}`, async () => {
+			const started = Date.now();
+			const ov = (createRequire(join(this.runtimeDir(), "index.js"))("openvino-node") as { addon: OpenVino }).addon;
+			const engine = await Supertonic.load(ov, dir, DEVICE);
+			this.tts = { dir, engine };
+			log.info(`text-to-speech loaded in ${Date.now() - started}ms`);
+			return engine;
+		});
+	}
+
+	/** Concurrent loads of the same model share one promise. */
+	private once<T>(key: string, load: () => Promise<T>): Promise<T> {
+		const running = this.loading.get(key) as Promise<T> | undefined;
+		if (running) return running;
+		const job = load().finally(() => this.loading.delete(key));
+		this.loading.set(key, job);
+		return job;
+	}
+
+	private touch(): void {
 		if (this.idleTimer) clearTimeout(this.idleTimer);
 		this.idleTimer = setTimeout(() => void this.unload(), IDLE_UNLOAD_MS);
 		this.idleTimer.unref?.();
-	}
-
-	private failAll(error: Error): void {
-		for (const waiting of this.pending.values()) waiting.reject(error);
-		this.pending.clear();
 	}
 }

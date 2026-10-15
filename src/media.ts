@@ -109,12 +109,10 @@ export class Media implements MediaHandler {
 	private async audio(message: InboundMessage, makeHeader: (voiceTag?: string) => string, quoted: string): Promise<PreparedPrompt> {
 		void this.deps.connection.presence(message.chatJid, "composing");
 		try {
-			const missing = this.deps.voice.missingModels().filter((spec) => spec.kind === "stt");
+			const missing = this.deps.voice.missingModels().filter((spec) => spec.kind === "stt" || spec.kind === "runtime");
 			if (missing.length > 0) {
-				await this.deps.queue.sendText(
-					message.chatJid,
-					`⏳ Getting the speech model ready (one-time download, ~${missing[0]!.approxMB} MB)…`,
-				);
+				const megabytes = missing.reduce((sum, spec) => sum + spec.approxMB, 0);
+				await this.deps.queue.sendText(message.chatJid, `⏳ Getting speech recognition ready (one-time download, ~${megabytes} MB)…`);
 			}
 			const audio = await this.deps.connection.download(message.raw);
 			const transcript = await this.deps.voice.transcribe(audio);
@@ -176,9 +174,10 @@ export class Media implements MediaHandler {
 		if (tooLong) toSpeak[toSpeak.length - 1] += " … The rest is in the text message.";
 		void this.deps.connection.presence(chatJid, "recording");
 		try {
-			const voice = this.deps.voice.voiceSpec(language);
-			if (voice && !this.deps.voice.models.isInstalled(voice)) {
-				await this.deps.queue.sendText(chatJid, `⏳ Getting the voice ready (one-time download, ~${voice.approxMB} MB)…`);
+			const missing = this.deps.voice.missingModels().filter((spec) => spec.kind === "tts" || spec.kind === "runtime");
+			if (missing.length > 0) {
+				const megabytes = missing.reduce((sum, spec) => sum + spec.approxMB, 0);
+				await this.deps.queue.sendText(chatJid, `⏳ Getting the voice ready (one-time download, ~${megabytes} MB)…`);
 			}
 			// Long answers go out as several voice notes, in order.
 			for (const part of toSpeak) {

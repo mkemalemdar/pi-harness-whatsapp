@@ -1,20 +1,18 @@
 /**
- * Voice: understands voice notes and speaks replies, downloading the needed
- * models on first use (and in the background when settings change).
+ * Voice: understands voice notes (Whisper turbo) and speaks replies
+ * (Supertonic 3), both on OpenVINO. Files download on first use, or when the
+ * user says "Now" after changing settings.
  */
 
-import { getLanguage, LANGUAGES, languageLabel } from "../languages.ts";
+import { getLanguage, LANGUAGES, languageLabel, VOICES } from "../languages.ts";
 import { createLogger } from "../log.ts";
-import type { GlobalSettings, SettingsStore, SpeechModel } from "../settings.ts";
-
-const SPEECH_MODEL_NAMES: Record<SpeechModel, string> = { base: "fast (base)", small: "balanced (small)", turbo: "accurate (turbo)" };
+import type { GlobalSettings, SettingsStore } from "../settings.ts";
 import { decodeToSamples, encodeVoiceNote } from "./audio.ts";
 import { SpeechEngine } from "./engine.ts";
 import { detectLanguage } from "./language.ts";
-import { type ModelSpec, ModelStore, SPEECH_MODEL_SPECS, voiceModelSpec } from "./models.ts";
+import { type ModelSpec, ModelStore, oldModelSpec, RUNTIME_SPEC, SUPERTONIC_SPEC, WHISPER_SPEC } from "./models.ts";
 
 const log = createLogger("voice");
-/** Longer replies are spoken only partly; the full text is sent as well. */
 /** Longest single voice note (about 1.5–2 minutes); longer answers are split into parts. */
 export const MAX_SPOKEN_CHARS = 1500;
 /** At most this many parts (about 10 minutes); anything longer also comes as text. */
@@ -31,9 +29,16 @@ export interface VoiceEvents {
 	onDownload?(spec: ModelSpec, fraction: number | undefined): void;
 }
 
+export interface SpeechFile {
+	name: string;
+	label: string;
+	kind: ModelSpec["kind"];
+	sizeMB: number;
+}
+
 export class VoiceService {
 	readonly models: ModelStore;
-	readonly engine = new SpeechEngine();
+	readonly engine: SpeechEngine;
 
 	constructor(
 		private readonly settings: SettingsStore,
@@ -41,112 +46,95 @@ export class VoiceService {
 		private readonly events: VoiceEvents = {},
 	) {
 		this.models = new ModelStore(modelsDir, (spec, fraction) => this.events.onDownload?.(spec, fraction));
+		this.engine = new SpeechEngine(() => this.models.dir(RUNTIME_SPEC));
 	}
 
-	speechModelSpec(settings: Readonly<GlobalSettings> = this.settings.get()): ModelSpec {
-		return SPEECH_MODEL_SPECS[settings.speechModel];
+	/** The voice for a language: the chosen one, or the default. */
+	voiceFor(language: string, settings: Readonly<GlobalSettings> = this.settings.get()): string {
+		const chosen = settings.voices[language];
+		return chosen && VOICES.some((voice) => voice.id === chosen) ? chosen : VOICES[0]!.id;
 	}
 
-	voiceSpec(language: string, settings: Readonly<GlobalSettings> = this.settings.get()): ModelSpec | undefined {
-		const voice = settings.voices[language] ?? getLanguage(language)?.voices[0]?.id;
-		return voice ? voiceModelSpec(voice) : undefined;
-	}
-
-	/** Every model the current settings need. */
+	/** Everything the current settings need: the engine, speech-to-text, and the voices when replies can be spoken. */
 	neededModels(settings: Readonly<GlobalSettings> = this.settings.get()): ModelSpec[] {
-		const specs = [this.speechModelSpec(settings)];
-		if (settings.voiceMode !== "off") {
-			for (const language of settings.languages) {
-				const spec = this.voiceSpec(language, settings);
-				if (spec) specs.push(spec);
-			}
-		}
-		return specs;
+		return settings.voiceMode === "off" ? [RUNTIME_SPEC, WHISPER_SPEC] : [RUNTIME_SPEC, WHISPER_SPEC, SUPERTONIC_SPEC];
 	}
 
 	/** Starts downloading anything missing, without waiting. */
 	prefetch(): void {
 		for (const spec of this.neededModels()) {
 			if (this.models.isInstalled(spec) || this.models.isDownloading(spec)) continue;
-			void this.models.ensure(spec).catch((error) => log.warn(`background download of ${spec.name} failed`, error));
+			void this.models.ensure(spec).catch((error) => log.warn(`download of ${spec.name} failed`, error));
 		}
 	}
 
-	/** Installed models the current settings no longer use (all speech sizes and voices are candidates). */
+	/** Model folders on disk that nothing uses: older Piper/sherpa models, or the voices while replies are text only. */
 	unusedModels(): ModelSpec[] {
 		const needed = new Set(this.neededModels().map((spec) => spec.name));
-		const settings = this.settings.get();
-		const candidates: ModelSpec[] = [...Object.values(SPEECH_MODEL_SPECS)];
-		for (const language of settings.languages) {
-			for (const voice of getLanguage(language)?.voices ?? []) candidates.push(voiceModelSpec(voice.id));
-		}
-		for (const name of this.models.installedNames()) {
-			if (name.startsWith("vits-piper-")) candidates.push(voiceModelSpec(name.slice("vits-piper-".length)));
-		}
-		const unique = new Map(candidates.map((spec) => [spec.name, spec]));
-		return [...unique.values()].filter((spec) => !needed.has(spec.name) && this.models.isInstalled(spec));
+		return this.models
+			.installedNames()
+			.filter((name) => !needed.has(name))
+			.map((name) => (name === WHISPER_SPEC.name ? WHISPER_SPEC : name === SUPERTONIC_SPEC.name ? SUPERTONIC_SPEC : oldModelSpec(name)));
 	}
 
 	missingModels(): ModelSpec[] {
 		return this.neededModels().filter((spec) => !this.models.isInstalled(spec));
 	}
 
-	/** A readable name, e.g. "Ryan (English)" or "speech-to-text: balanced (small)". */
+	/** A readable name, e.g. "speech-to-text (Whisper turbo)". */
 	describe(spec: ModelSpec): string {
-		if (spec.kind === "stt") {
-			const size = (Object.keys(SPEECH_MODEL_SPECS) as SpeechModel[]).find((key) => SPEECH_MODEL_SPECS[key].name === spec.name);
-			return `speech-to-text: ${size ? SPEECH_MODEL_NAMES[size] : spec.name}`;
+		switch (spec.kind) {
+			case "runtime":
+				return "speech engine (OpenVINO)";
+			case "stt":
+				return "speech-to-text (Whisper turbo)";
+			case "tts":
+				return "voices (Supertonic)";
+			default:
+				if (spec.name.startsWith("vits-piper-")) return `old voice: ${spec.name.slice("vits-piper-".length)}`;
+				if (spec.name.startsWith("sherpa-onnx-whisper-")) return `old speech-to-text: ${spec.name.slice("sherpa-onnx-whisper-".length)}`;
+				return spec.name;
 		}
-		const voiceId = spec.name.replace(/^vits-piper-/, "");
-		for (const language of LANGUAGES) {
-			const voice = language.voices.find((option) => option.id === voiceId);
-			if (voice) return `${voice.label.replace(/ \(.*\)$/, "")} (${language.name})`;
-		}
-		return voiceId;
 	}
 
 	/** Name, label, kind and size (real size on disk, or the download size). */
-	file(spec: ModelSpec, onDisk: boolean): { name: string; label: string; kind: "stt" | "tts"; sizeMB: number } {
+	file(spec: ModelSpec, onDisk: boolean): SpeechFile {
 		const sizeMB = onDisk ? Math.round(this.models.sizeOf(spec) / 1e6) : spec.approxMB;
 		return { name: spec.name, label: this.describe(spec), kind: spec.kind, sizeMB };
 	}
 
-	/** Speaks with a specific voice (used for samples). */
-	async speakWith(text: string, voiceId: string): Promise<{ audio: Buffer; seconds: number }> {
-		const spec = voiceModelSpec(voiceId);
-		await this.models.ensure(spec);
-		const spoken = await this.engine.speak(this.models.piperFiles(spec), text, this.settings.get().voiceSpeed);
+	/** Speaks a short text with a specific voice (for "Send me a sample"). */
+	async speakWith(text: string, language: string, voice: string): Promise<{ audio: Buffer; seconds: number }> {
+		const spoken = await this.engine.speak(await this.ready(SUPERTONIC_SPEC), text, language, voice, this.settings.get().voiceSpeed);
 		return encodeVoiceNote(spoken.samples, spoken.sampleRate);
 	}
 
 	/** Voice note audio → text and language. */
 	async transcribe(audio: Buffer): Promise<Transcript> {
-		const settings = this.settings.get();
-		const spec = this.speechModelSpec(settings);
-		await this.models.ensure(spec);
-		const files = this.models.whisperFiles(spec);
+		const dir = await this.ready(WHISPER_SPEC);
 		const samples = await decodeToSamples(audio);
-		const keep = new Float32Array(samples); // the first pass transfers its copy to the worker
-		const first = await this.engine.transcribe(files, samples);
-		const enabled = settings.languages;
-		if (!first.language || enabled.includes(first.language) || !first.text) {
-			return { text: first.text, ...(first.language ? { language: first.language } : {}), ms: first.ms };
+		const first = await this.engine.transcribe(dir, samples);
+		const enabled = this.settings.get().languages;
+		if (!first.text) return { text: "", ms: first.ms };
+		// The language comes from the text (OpenVINO doesn't report Whisper's guess).
+		const heard = detectLanguage(first.text, allLanguageCodes());
+		if (!heard || enabled.includes(heard)) {
+			const language = heard ?? detectLanguage(first.text, enabled);
+			return { text: first.text, ...(language ? { language } : {}), ms: first.ms };
 		}
-		// Whisper heard a language the user doesn't use (e.g. Azerbaijani for Turkish):
-		// decode again in the most likely enabled language.
+		// Whisper wrote a language the user doesn't use (e.g. Polish for a short Turkish
+		// note): decode again in the most likely enabled language.
 		const retry = detectLanguage(first.text, enabled) ?? enabled[0]!;
-		log.info(`whisper detected ${first.language}; retrying as ${retry}`);
-		const second = await this.engine.transcribe(files, keep, retry);
+		log.info(`heard ${heard}; retrying as ${retry}`);
+		const second = await this.engine.transcribe(dir, samples, retry);
 		return { text: second.text || first.text, language: retry, ms: first.ms + second.ms };
 	}
 
-	/** Text → WhatsApp voice note in the given language. */
+	/** Text → WhatsApp voice note in the given language, with that language's voice. */
 	async speak(text: string, language: string): Promise<{ audio: Buffer; seconds: number }> {
 		const settings = this.settings.get();
-		const spec = this.voiceSpec(language, settings);
-		if (!spec) throw new Error(`no voice for ${languageLabel(language)}`);
-		await this.models.ensure(spec);
-		const spoken = await this.engine.speak(this.models.piperFiles(spec), text, settings.voiceSpeed);
+		if (!getLanguage(language)) throw new Error(`no voice for ${languageLabel(language)}`);
+		const spoken = await this.engine.speak(await this.ready(SUPERTONIC_SPEC), text, language, this.voiceFor(language, settings), settings.voiceSpeed);
 		return encodeVoiceNote(spoken.samples, spoken.sampleRate);
 	}
 
@@ -155,12 +143,22 @@ export class VoiceService {
 		const missing = this.missingModels();
 		const downloading = missing.filter((spec) => this.models.isDownloading(spec));
 		const disk = `${Math.round(this.models.diskUsage() / 1e6)} MB on disk`;
-		if (downloading.length > 0) return `Voice models: downloading ${downloading.map((spec) => spec.name).join(", ")} · ${disk}`;
-		if (missing.length > 0) return `Voice models: ${missing.length} still to download (on first use) · ${disk}`;
-		return `Voice models: ready · ${disk}${this.engine.isLoaded() ? " · loaded" : ""}`;
+		if (downloading.length > 0) return `Voice: downloading ${downloading.map((spec) => this.describe(spec)).join(", ")} · ${disk}`;
+		if (missing.length > 0) return `Voice: ${missing.length} file set(s) still to download (on first use) · ${disk}`;
+		return `Voice: ready · ${disk}${this.engine.isLoaded() ? " · loaded" : ""}`;
 	}
 
 	async shutdown(): Promise<void> {
 		await this.engine.unload();
 	}
+
+	/** Makes sure the engine and the given model are on disk; returns the model folder. */
+	private async ready(spec: ModelSpec): Promise<string> {
+		await this.models.ensure(RUNTIME_SPEC);
+		return this.models.ensure(spec);
+	}
+}
+
+function allLanguageCodes(): string[] {
+	return LANGUAGES.map((language) => language.code);
 }

@@ -9,11 +9,9 @@ import { dirname } from "node:path";
 import { defaultVoiceFor, getLanguage } from "./languages.ts";
 
 export type VoiceMode = "off" | "voice" | "voice+text" | "mirror";
-export type SpeechModel = "base" | "small" | "turbo";
 export type CommandAccess = "owner" | "allowed";
 
 export const VOICE_MODES: readonly VoiceMode[] = ["off", "voice", "voice+text", "mirror"];
-export const SPEECH_MODELS: readonly SpeechModel[] = ["base", "small", "turbo"];
 export const SPEED_PRESETS: readonly number[] = [0.9, 1.0, 1.2];
 export const MIN_SPEED = 0.5;
 export const MAX_SPEED = 2.0;
@@ -53,7 +51,6 @@ export interface GlobalSettings {
 	languages: string[];
 	/** Chosen voice per language code. */
 	voices: Record<string, string>;
-	speechModel: SpeechModel;
 	voiceSpeed: number;
 	forwardToolImages: boolean;
 	askAtSessionStart: boolean;
@@ -78,7 +75,6 @@ export function defaultSettings(): GlobalSettings {
 		replyLanguage: MIRROR,
 		languages: ["en"],
 		voices: { en: defaultVoiceFor("en")! },
-		speechModel: "base",
 		voiceSpeed: 1.0,
 		forwardToolImages: false,
 		askAtSessionStart: false,
@@ -169,7 +165,6 @@ export function normalizeSettings(raw: unknown): GlobalSettings {
 		replyLanguage,
 		languages,
 		voices,
-		speechModel: pick(raw.speechModel, SPEECH_MODELS, defaults.speechModel),
 		voiceSpeed: typeof raw.voiceSpeed === "number" ? clampSpeed(raw.voiceSpeed) : defaults.voiceSpeed,
 		forwardToolImages: bool(raw.forwardToolImages, defaults.forwardToolImages),
 		askAtSessionStart: bool(raw.askAtSessionStart, defaults.askAtSessionStart),

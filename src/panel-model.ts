@@ -9,9 +9,7 @@ import {
 	type GlobalSettings,
 	MIRROR,
 	type ReplyToggles,
-	SPEECH_MODELS,
 	SPEED_PRESETS,
-	type SpeechModel,
 	VOICE_MODES,
 	type VoiceMode,
 } from "./settings.ts";
@@ -35,14 +33,6 @@ const VOICE_MODE_DESCRIPTIONS: Record<VoiceMode, string> = {
 	"voice+text": "always a voice note and the text",
 };
 
-export const SPEECH_MODEL_LABELS: Record<SpeechModel, string> = {
-	base: "fast (base)",
-	small: "balanced (small)",
-	turbo: "accurate (turbo)",
-};
-
-const SPEECH_MODEL_RAM: Record<SpeechModel, string> = { base: "~1.0 GB RAM", small: "~1.6 GB RAM", turbo: "~2.9 GB RAM" };
-const SPEECH_MODEL_DOWNLOAD: Record<SpeechModel, string> = { base: "208 MB", small: "639 MB", turbo: "564 MB" };
 
 export const ACCESS_LABELS = { owner: "only me", allowed: "all allowed chats" } as const;
 
@@ -260,7 +250,7 @@ export function buildRows(state: PanelState): PanelRow[] {
 		{
 			id: "languages",
 			label: "My languages",
-			description: "The languages you use. Each one gets a voice for spoken replies (~67 MB, downloaded when needed).",
+			description: "The languages you use. Pi understands them in voice notes and can reply in them.",
 			currentValue: settings.languages.map(languageLabel).join(", "),
 			kind: "languages",
 		},
@@ -282,19 +272,6 @@ export function buildRows(state: PanelState): PanelRow[] {
 		},
 
 		header("technical", "TECHNICAL", "How voice notes are processed on this machine."),
-		{
-			id: "speechModel",
-			label: "Speech-to-text model",
-			description: "Turns your voice notes into text. Bigger is more accurate but slower and uses more RAM.",
-			currentValue: SPEECH_MODEL_LABELS[settings.speechModel],
-			kind: "choice",
-			current: settings.speechModel,
-			choices: SPEECH_MODELS.map((model) => ({
-				value: model,
-				label: SPEECH_MODEL_LABELS[model],
-				detail: `${speech.installed.has(`sherpa-onnx-whisper-${model}`) ? "✓ on disk" : SPEECH_MODEL_DOWNLOAD[model]} · ${SPEECH_MODEL_RAM[model]}`,
-			})),
-		},
 		{
 			id: "voiceSpeed",
 			label: "Voice reply speed",
@@ -335,9 +312,6 @@ export function applyChoice(draft: GlobalSettings, id: string, value: string): b
 		case "defaultLanguage":
 			// The first enabled language is the fallback.
 			if (draft.languages.includes(value)) draft.languages = [value, ...draft.languages.filter((code) => code !== value)];
-			return true;
-		case "speechModel":
-			if ((SPEECH_MODELS as readonly string[]).includes(value)) draft.speechModel = value as SpeechModel;
 			return true;
 		case "voiceSpeed": {
 			const speed = Number.parseFloat(value.replace(",", "."));

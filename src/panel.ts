@@ -30,7 +30,7 @@ export type PanelAction = "contacts" | "qr";
 export interface SpeechFile {
 	name: string;
 	label: string;
-	kind: "stt" | "tts";
+	kind: "stt" | "tts" | "runtime" | "old";
 	sizeMB: number;
 }
 
@@ -263,7 +263,7 @@ function voiceList(code: string, context: SubmenuContext, onChanged: () => void)
 			id: voice.id,
 			label: voice.label,
 			marker: voice.id === current ? "●" : " ",
-			detail: voice.id === current ? "in use" : host.isInstalled(`vits-piper-${voice.id}`) ? "✓ on disk" : "67 MB",
+			...(voice.id === current ? { detail: "in use" } : {}),
 		}));
 	};
 	const current = host.settings.get().voices[code];
@@ -287,7 +287,8 @@ function voiceList(code: string, context: SubmenuContext, onChanged: () => void)
 function voiceActions(code: string, voiceId: string, context: SubmenuContext, onChanged: () => void): Component {
 	const { host, theme, stack, render } = context;
 	const voice = getLanguage(code)!.voices.find((option) => option.id === voiceId)!;
-	const onDisk = () => host.isInstalled(`vits-piper-${voiceId}`);
+	// All voices live in one download, shared by every language.
+	const onDisk = () => host.isInstalled("supertonic-3");
 	const inUse = () => host.settings.get().voices[code] === voiceId;
 	let sending = false;
 	const items = (): MenuItem[] => [
@@ -301,7 +302,7 @@ function voiceActions(code: string, voiceId: string, context: SubmenuContext, on
 		{
 			id: "sample",
 			label: "Send me a sample on WhatsApp",
-			...(onDisk() ? {} : { detail: "downloads 67 MB first" }),
+			...(onDisk() ? {} : { detail: "downloads the voices first (~400 MB)" }),
 			description: "Sends a short voice note in this voice to the owner's WhatsApp.",
 		},
 		{ id: "back", label: "Back", description: "Back to the voice list." },
@@ -442,6 +443,7 @@ function deleteChecklist(context: SubmenuContext, onDone: (message: string | und
 	const files = host.unusedFiles();
 	const ticked = new Set(files.map((file) => file.name));
 	const groups = [
+		{ id: "group:old", label: "From an older version (Piper voices, old speech models)", kind: "old" as const },
 		{ id: "group:tts", label: "Voices", kind: "tts" as const },
 		{ id: "group:stt", label: "Speech-to-text", kind: "stt" as const },
 	].filter((group) => files.some((file) => file.kind === group.kind));

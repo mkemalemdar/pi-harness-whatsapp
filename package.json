@@ -1,6 +1,6 @@
 {
   "name": "pi-harness-whatsapp",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Talk to Pi from WhatsApp: images, files and optional voice notes in and out, automatic replies, group chats, poll menus to control Pi.",
   "type": "module",
   "license": "MIT",
@@ -53,6 +53,11 @@
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*",
     "typebox": "*"
+  },
+  "allowScripts": {
+    "@google/genai": false,
+    "baileys": false,
+    "protobufjs": false
   },
   "dependencies": {
     "baileys": "7.0.0-rc14",

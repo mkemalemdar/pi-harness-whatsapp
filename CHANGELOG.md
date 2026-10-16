@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3 — 2026-10-16
+
+- No more npm warning about skipped install scripts when installing from GitHub (the two scripts, version checks in `baileys` and `protobufjs`, are now refused explicitly; they never ran before either).
+
 ## 0.1.2 — 2026-10-16
 
 - **Fixed file permissions:** the data folder and the WhatsApp login in it were readable by other users on the same machine. Every folder the extension creates is now private (only your user can open it), and existing installs are fixed the next time Pi starts.

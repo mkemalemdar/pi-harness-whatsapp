@@ -281,6 +281,7 @@ Removal is careful: with apt, it first does a dry run and keeps everything if re
 - **Messages are ignored:** the sender isn't in Allowed chats. Pi shows a notice in the terminal the first time.
 - **"Voice notes are off":** tick **Understand voice notes** in `/whatsapp` → Voice notes.
 - **Voice notes fail:** check that `ffmpeg -version` works. With "When first needed", the first voice note waits for the download (up to 1.4 GB); a download that drops continues where it stopped, and one that stalls for a minute is given up and tried again with the next voice note. On Intel Macs and Windows on ARM, voice notes aren't available.
+- **npm warns that install scripts of `baileys` and `protobufjs` were skipped:** harmless. Those scripts only check versions, and the extension doesn't need them. Installs from GitHub don't show it. To hide it for installs from npm too: `cd ~/.pi/agent/npm && npm install-scripts deny baileys protobufjs`.
 - **More detail:** set `PI_HARNESS_WHATSAPP_DEBUG=1` before starting Pi, and check the log. Debug logging also writes WhatsApp's own internal messages, which can contain message content, so turn it off again afterwards.
 
 ## Development

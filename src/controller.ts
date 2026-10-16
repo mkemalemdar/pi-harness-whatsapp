@@ -20,7 +20,7 @@ import { cleanInbox, Media } from "./media.ts";
 import type { SpeechInfo } from "./panel-model.ts";
 import { getLanguage } from "./languages.ts";
 import { type ConnectionCommand, type PanelHost, showPanel } from "./panel.ts";
-import { dataDir, paths, removeDataDir } from "./paths.ts";
+import { dataDir, makePrivate, paths, removeDataDir } from "./paths.ts";
 import { isRemoved, markRemoved } from "./removed.ts";
 import { detectService } from "./commands/power.ts";
 import {
@@ -130,6 +130,9 @@ export class Controller implements PanelHost, CommandEnv {
 			ctx.ui.setStatus(STATUS_KEY, REMOVED_STATUS);
 			return;
 		}
+		// Installs from before 0.1.2 left the data folder (and the login in it) readable by other users.
+		makePrivate(dataDir());
+		makePrivate(paths.auth(), true);
 		let settings = this.settings.load();
 		this.recents.load();
 		cleanInbox(paths.inbox());

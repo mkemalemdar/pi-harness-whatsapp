@@ -4,8 +4,9 @@
  * talks to Baileys' socket directly, so a Baileys upgrade stays contained.
  */
 
-import { existsSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { makePrivate } from "../paths.ts";
 import makeWASocket, {
 	type AnyMessageContent,
 	Browsers,
@@ -298,6 +299,10 @@ export class WhatsAppConnection {
 		const generation = ++this.generation;
 		this.setState({ kind: "connecting", attempt: this.attempt });
 		try {
+			// The login lets anyone use the account: only this user may open its folder.
+			mkdirSync(this.authDir, { recursive: true, mode: 0o700 });
+			makePrivate(dirname(this.authDir));
+			makePrivate(this.authDir, true);
 			const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
 			if (generation !== this.generation || !this.wantRunning) return;
 			this.version ??= await this.fetchVersion();

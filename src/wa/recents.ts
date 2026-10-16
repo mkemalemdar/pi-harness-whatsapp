@@ -99,7 +99,7 @@ export class RecentsStore {
 		if (!this.dirty || isRemoved()) return;
 		this.dirty = false;
 		try {
-			mkdirSync(dirname(this.file), { recursive: true });
+			mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 });
 			const temporary = `${this.file}.${process.pid}.tmp`;
 			const data = { chats: this.list().slice(0, MAX_CHATS), lids: [...this.lidToPhone] };
 			writeFileSync(temporary, JSON.stringify(data), { mode: 0o600 });

@@ -202,7 +202,7 @@ export class ModelStore {
 
 	private async install(spec: ModelSpec): Promise<string> {
 		if (!spec.hf) throw new Error(`${spec.name} can't be downloaded`);
-		mkdirSync(this.root, { recursive: true });
+		mkdirSync(this.root, { recursive: true, mode: 0o700 });
 		const staging = this.staging(spec);
 		log.info(`downloading ${spec.hf.repo}@${spec.hf.revision.slice(0, 8)}`);
 		this.onProgress?.(spec, 0);
@@ -244,7 +244,7 @@ export class ModelStore {
 		if (!runtimeSupported(os, cpu)) {
 			throw new Error(`OpenVINO has no build for ${os}/${cpu}, so voice notes can't work on this machine`);
 		}
-		mkdirSync(this.root, { recursive: true });
+		mkdirSync(this.root, { recursive: true, mode: 0o700 });
 		const staging = join(this.root, `.${spec.name}.downloading`);
 		this.onProgress?.(spec, 0);
 		try {

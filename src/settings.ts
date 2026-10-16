@@ -271,7 +271,7 @@ export class SettingsStore {
 
 	private save(): void {
 		if (isRemoved()) return;
-		mkdirSync(dirname(this.filePath), { recursive: true });
+		mkdirSync(dirname(this.filePath), { recursive: true, mode: 0o700 });
 		const temporary = `${this.filePath}.${process.pid}.tmp`;
 		writeFileSync(temporary, `${JSON.stringify(this.settings, null, 2)}\n`, { mode: 0o600 });
 		renameSync(temporary, this.filePath);

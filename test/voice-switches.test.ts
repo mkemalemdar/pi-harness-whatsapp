@@ -1,5 +1,5 @@
 // Own file: it points the extension's data folder at a temporary one.
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -56,6 +56,30 @@ describe("starting after an update", () => {
 		// Nothing was written just by starting.
 		expect(existsSync(join(dir, "config.json"))).toBe(false);
 		await controller.onSessionShutdown();
+	});
+
+	it.runIf(process.platform !== "win32")("makes the data folder and the login private, also for older installs", async () => {
+		const { Controller } = await import("../src/controller.ts");
+		mkdirSync(join(dir, "auth"), { recursive: true });
+		writeFileSync(join(dir, "auth", "creds.json"), "{}");
+		chmodSync(dir, 0o755);
+		chmodSync(join(dir, "auth"), 0o755);
+		chmodSync(join(dir, "auth", "creds.json"), 0o644);
+		const controller = new Controller(pi as never);
+		await controller.onSessionStart({ type: "session_start", reason: "startup" } as never, ctx as never);
+		const mode = (path: string) => statSync(path).mode & 0o777;
+		expect([mode(dir), mode(join(dir, "auth")), mode(join(dir, "auth", "creds.json"))]).toEqual([0o700, 0o700, 0o600]);
+		await controller.onSessionShutdown();
+		// Folders created later are private from the start.
+		const fresh = join(dir, "..", `${dir.split("/").pop()}-fresh`);
+		const { SettingsStore } = await import("../src/settings.ts");
+		const store = new SettingsStore(join(fresh, "config.json"));
+		store.load();
+		store.update((draft) => {
+			draft.voiceSpeed = 1.1;
+		});
+		expect(mode(fresh)).toBe(0o700);
+		rmSync(fresh, { recursive: true, force: true });
 	});
 
 	it("deletes a switched-off part's files, keeping the engine the other part needs", async () => {

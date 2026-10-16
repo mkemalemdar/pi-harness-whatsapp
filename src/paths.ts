@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, rmdirSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, readdirSync, rmdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -10,6 +10,26 @@ export function dataDir(): string {
 	if (process.env.PI_HARNESS_WHATSAPP_DIR) return process.env.PI_HARNESS_WHATSAPP_DIR;
 	const agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
 	return join(agentDir, "pi-harness-whatsapp");
+}
+
+/** Folders the extension creates: only this user may open them (the data folder holds the WhatsApp login). */
+export const PRIVATE_DIR_MODE = 0o700;
+
+/**
+ * Makes a folder private (owner only), and with `files` also the files directly
+ * in it. Fixes installs from before 0.1.2, whose login was readable by other users.
+ */
+export function makePrivate(dir: string, files = false): void {
+	try {
+		if (!existsSync(dir)) return;
+		chmodSync(dir, PRIVATE_DIR_MODE);
+		if (!files) return;
+		for (const entry of readdirSync(dir, { withFileTypes: true })) {
+			if (entry.isFile()) chmodSync(join(dir, entry.name), 0o600);
+		}
+	} catch {
+		// Not every file system has Unix permissions (e.g. Windows); nothing to fix there.
+	}
 }
 
 export const paths = {

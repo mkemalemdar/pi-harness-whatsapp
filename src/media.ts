@@ -171,7 +171,7 @@ export class Media implements MediaHandler {
 		try {
 			const data = await this.deps.connection.download(message.raw);
 			if (data.length > MAX_FILE_BYTES) return { content: `${header}${quoted} (sent ${what} too large to save)`, voice: false };
-			mkdirSync(this.deps.inboxDir, { recursive: true });
+			mkdirSync(this.deps.inboxDir, { recursive: true, mode: 0o700 });
 			const name = safeFileName(message.fileName, EXT_BY_MIME[message.mimeType ?? ""] ?? (message.kind === "video" ? ".mp4" : ".bin"));
 			const path = join(this.deps.inboxDir, name);
 			writeFileSync(path, data, { mode: 0o600 });

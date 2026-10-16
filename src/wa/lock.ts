@@ -74,7 +74,7 @@ export class ConnectionLock {
 
 	/** Takes the lock unless another live process on this machine holds it. */
 	acquire(): LockResult {
-		mkdirSync(dirname(this.file), { recursive: true });
+		mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 });
 		const me: LockHolder = { pid: this.pid, host: hostname(), since: Date.now() };
 		for (let attempt = 0; attempt < 2; attempt++) {
 			try {

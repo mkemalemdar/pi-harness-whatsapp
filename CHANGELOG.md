@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2 — 2026-10-16
+
+- **Fixed file permissions:** the data folder and the WhatsApp login in it were readable by other users on the same machine. Every folder the extension creates is now private (only your user can open it), and existing installs are fixed the next time Pi starts.
+
 ## 0.1.1 — 2026-10-15
 
 - **Voice is optional, and off by default.** `/whatsapp` → Voice → **Voice notes** has two ticks: understand voice notes (speech-to-text, 1.0 GB) and reply with voice notes (text-to-speech, 0.6 GB), plus "Delete all speech files". Leaving the menu asks before deleting the files of a part you unticked ("You set speech-to-text for removal. 828 MB will be freed."; No puts the tick back) and offers to download a part you ticked (now, or when first needed). Nothing is downloaded while voice is off.

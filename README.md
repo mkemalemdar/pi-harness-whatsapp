@@ -218,7 +218,7 @@ Everything lives in `~/.pi/agent/pi-harness-whatsapp/`:
 | `setup.json` | Only if the installer recorded it: programs installed just for the extension (see [Uninstall](#what-was-installed-for-it)) |
 | `log/pi-harness-whatsapp.log` | Log: connection events and errors, no message text (unless debug logging is on). Rotated at 5 MB into `.log.1`. |
 
-If you set `PI_HARNESS_WHATSAPP_DIR`, everything is in that folder instead. The extension writes nothing anywhere else, apart from Pi's own files (your sessions and its package list).
+The folder is private: only your user can open it. If you set `PI_HARNESS_WHATSAPP_DIR`, everything is in that folder instead. The extension writes nothing anywhere else, apart from Pi's own files (your sessions and its package list).
 
 ## Uninstall
 

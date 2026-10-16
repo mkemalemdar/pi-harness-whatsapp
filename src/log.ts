@@ -39,7 +39,7 @@ function serialize(value: unknown): string {
 function write(level: Level, scope: string, parts: unknown[]): void {
 	if (LEVELS[level] < LEVELS[minLevel] || isRemoved()) return;
 	try {
-		mkdirSync(paths.logs(), { recursive: true });
+		mkdirSync(paths.logs(), { recursive: true, mode: 0o700 });
 		const target = file();
 		rotateIfNeeded(target);
 		const line = `${new Date().toISOString()} ${level.toUpperCase().padEnd(5)} [${scope}] ${parts.map(serialize).join(" ")}\n`;

@@ -340,16 +340,11 @@ export function buildRows(state: PanelState): PanelRow[] {
 			currentValue: VOICE_MODE_LABELS[replyMode(settings)],
 			kind: "choice",
 			current: replyMode(settings),
-			choices: (["mirror", "off", "voice", "voice+text"] as const).map((mode) => {
-				// "Mirror me" answers voice with voice, so Pi has to understand voice notes.
-				const needsUnderstand = mode === "mirror" && !settings.voice.understand;
-				return {
-					value: mode,
-					label: VOICE_MODE_LABELS[mode],
-					detail: needsUnderstand ? "needs “Understand voice notes”" : VOICE_MODE_DESCRIPTIONS[mode],
-					...(needsUnderstand ? { disabled: true } : {}),
-				};
-			}),
+			choices: (["mirror", "off", "voice", "voice+text"] as const).map((mode) => ({
+				value: mode,
+				label: VOICE_MODE_LABELS[mode],
+				detail: VOICE_MODE_DESCRIPTIONS[mode],
+			})),
 			...(settings.voice.reply ? {} : { locked: REPLY_LOCKED }),
 		},
 		{

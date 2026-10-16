@@ -49,7 +49,7 @@ Then show the remaining settings in **one** message, with the default for each, 
 
 | Setting (name in `/whatsapp`) | What it does | Default | Other choices |
 |---|---|---|---|
-| Reply type (only with "reply with voice notes") | How Pi answers | **mirror me**: a voice note gets a voice reply, text gets text (without "understand voice notes": always a voice note) | text only · voice note · voice note + text |
+| Reply type (only with "reply with voice notes") | How Pi answers | **mirror me**: a voice note gets a voice reply, text gets text | text only · voice note · voice note + text. With "reply" but not "understand", mirror me means text replies only, so suggest "voice note" if they want to hear Pi. |
 | Reply language | Which language Pi answers in | **mirror me**: the language they used | always one of their languages |
 | Fallback language | Used only when Pi can't tell the language (e.g. very short replies) | **the first language** they named | any of their languages |
 | Voice per language (only with "reply with voice notes") | Which voice speaks each language | **F1** (female) | F2–F5 (female), M1–M5 (male); the same 10 voices for every language |

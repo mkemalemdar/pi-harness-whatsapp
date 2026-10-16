@@ -108,8 +108,10 @@ describe("buildRows", () => {
 		expect(byId("voiceMode").currentValue).toBe("text");
 		expect(byId("replyLanguage").locked).toBeUndefined();
 
-		const mirror = buildRows(stateFor(false, { understand: false, reply: true })).find((row) => row.id === "voiceMode")!.choices!.find((choice) => choice.value === "mirror")!;
-		expect(mirror).toMatchObject({ disabled: true, detail: "needs “Understand voice notes”" });
+		const replyOnly = buildRows(stateFor(false, { understand: false, reply: true })).find((row) => row.id === "voiceMode")!;
+		expect(replyOnly).toMatchObject({ currentValue: "mirror me" });
+		expect(replyOnly.locked).toBeUndefined();
+		expect(replyOnly.choices!.every((choice) => !choice.disabled)).toBe(true);
 	});
 });
 

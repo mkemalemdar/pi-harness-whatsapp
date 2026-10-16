@@ -195,15 +195,9 @@ export function normalizeSettings(raw: unknown): GlobalSettings {
 	};
 }
 
-/**
- * How replies go out: text ("off") whenever voice replies are off, otherwise
- * the chosen reply type. "Mirror me" answers voice notes with voice, so without
- * understanding voice notes it means "voice": someone who only switched on
- * voice replies wants to hear them.
- */
+/** How replies go out: text ("off") whenever voice replies are off, otherwise the chosen reply type. */
 export function replyMode(settings: Readonly<GlobalSettings>): VoiceMode {
-	if (!settings.voice.reply) return "off";
-	return settings.voiceMode === "mirror" && !settings.voice.understand ? "voice" : settings.voiceMode;
+	return settings.voice.reply ? settings.voiceMode : "off";
 }
 
 export type SettingsListener = (settings: Readonly<GlobalSettings>) => void;

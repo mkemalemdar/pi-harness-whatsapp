@@ -375,8 +375,6 @@ describe("CommandRouter", () => {
 		env.settings.update((draft) => {
 			draft.voice = { understand: false, reply: true };
 		});
-		await router.handle(msg("/voice mirror"), owner);
-		expect(sent.at(-1)).toMatch(/needs Pi to understand voice notes/);
 		await router.handle(msg("/help"), owner);
 		expect(sent.at(-1)).toContain("Voice notes: understand ✗ · reply ✓");
 	});

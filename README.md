@@ -98,7 +98,7 @@ Every row opens a small menu with the choices and a short explanation. Nothing c
 | | Stats (tools · time) | On · **Off**. A line like `✅ 4/6 tool calls ok · ⏱ 2m 14s`. |
 | | Auto-send tool images | On · **Off**. Every image a tool makes while answering you (e.g. browser screenshots). You can always ask Pi to send a specific image instead. |
 | Voice | Voice notes | Two ticks, both **off**: **Understand voice notes** (1.0 GB) and **Reply with voice notes** (0.6 GB), plus **Delete all speech files**. See [Voice](#voice). |
-| | Reply type | **Mirror me** (voice note in → voice reply) · text · voice · voice + text. Greyed out until "Reply with voice notes" is on; without "Understand voice notes", mirror me isn't available and replies are spoken. |
+| | Reply type | **Mirror me** (voice note in → voice reply, text in → text reply) · text · voice · voice + text. Greyed out until "Reply with voice notes" is on. Without "Understand voice notes", mirror me answers everything with text (Pi gets no voice notes to mirror), so pick voice if you want spoken replies. |
 | | Voice per language | Which voice speaks each language: one of 10 voices, **F1**–F5 (female) and M1–M5 (male), the same list for every language. "Send me a sample" sends a short voice note to your WhatsApp first. Greyed out until "Reply with voice notes" is on. |
 | | Voice reply speed | 0.9 · **1.0** · 1.2 · custom (0.5–2.0). Greyed out until "Reply with voice notes" is on. |
 | Languages | Reply language | **Mirror me** (the language you used) or one of your languages. |

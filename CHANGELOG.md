@@ -4,7 +4,7 @@
 
 - **Voice is optional, and off by default.** `/whatsapp` → Voice → **Voice notes** has two ticks: understand voice notes (speech-to-text, 1.0 GB) and reply with voice notes (text-to-speech, 0.6 GB), plus "Delete all speech files". Leaving the menu asks before deleting the files of a part you unticked ("You set speech-to-text for removal. 828 MB will be freed."; No puts the tick back) and offers to download a part you ticked (now, or when first needed). Nothing is downloaded while voice is off.
 - While understanding is off, a voice note gets "🎤 Voice notes are off. Please type your message." (in groups, only one that replies to Pi) and never reaches the model.
-- Reply type, the voices and the voice speed are greyed out until voice replies are on, and say which tick turns them on. Without understanding voice notes, "mirror me" isn't offered and replies are spoken. `/voice` and `/speed` on WhatsApp say so instead of changing anything; `/help` and `/status` show both switches.
+- Reply type, the voices and the voice speed are greyed out until voice replies are on, and say which tick turns them on. `/voice` and `/speed` on WhatsApp say so instead of changing anything; `/help` and `/status` show both switches.
 - The panel has a VOICE section and a DANGER section (Remove everything, and where the log file is); the Speech files row is gone.
 - Existing setups keep the voice parts whose files are already on disk. Leftovers from older versions (Piper voices, older Whisper models, unfinished downloads nothing needs) are deleted on start.
 - README and AGENT_INSTALL: what voice costs in disk and RAM per part, the new settings, and an install question about voice.

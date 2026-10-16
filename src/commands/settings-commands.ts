@@ -17,7 +17,6 @@ const VOICE_ALIASES: Record<string, VoiceMode> = {
 
 /** Voice can only be switched on in the terminal: it downloads (and deletes) speech files. */
 export const VOICE_REPLIES_OFF = "Voice replies are off. Turn them on in the terminal: /whatsapp → Voice notes → Reply with voice notes.";
-const MIRROR_NEEDS_UNDERSTAND = "“Mirror me” needs Pi to understand voice notes. Turn that on in the terminal: /whatsapp → Voice notes → Understand voice notes.";
 
 function repliesState(env: CommandEnv): string {
 	const replies = env.settings.get().replies;
@@ -45,16 +44,16 @@ export function settingsCommands(): Command[] {
 				const settings = env.settings.get();
 				if (!settings.voice.reply) return VOICE_REPLIES_OFF;
 				const direct = VOICE_ALIASES[args.toLowerCase()];
-				if (direct === "mirror" && !settings.voice.understand) return MIRROR_NEEDS_UNDERSTAND;
 				if (direct) return apply(direct);
 				const current = replyMode(settings);
 				await env.menus.show(request.chatJid, {
 					kind: "voice",
 					title: `Reply type (now ${VOICE_MODE_LABELS[current]})`,
 					gated: true,
-					options: (["mirror", "off", "voice", "voice+text"] as const)
-						.filter((mode) => mode !== "mirror" || settings.voice.understand)
-						.map((mode) => ({ label: `${mode === current ? "✓ " : ""}${VOICE_MODE_LABELS[mode]}`, value: mode })),
+					options: (["mirror", "off", "voice", "voice+text"] as const).map((mode) => ({
+						label: `${mode === current ? "✓ " : ""}${VOICE_MODE_LABELS[mode]}`,
+						value: mode,
+					})),
 					onPick: async ([mode]) => apply(mode as VoiceMode),
 				});
 				return undefined;

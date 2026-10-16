@@ -74,10 +74,8 @@ describe("voice switches", () => {
 		expect(replyMode(settings)).toBe("off");
 		settings.voice.reply = true;
 		expect(replyMode(settings)).toBe("voice");
-		// Mirror me can't mirror without understanding voice notes: replies are spoken.
+		// Mirror me stays mirror me: typed messages get text, even when Pi can't listen.
 		settings.voiceMode = "mirror";
-		expect(replyMode(settings)).toBe("voice");
-		settings.voice.understand = true;
 		expect(replyMode(settings)).toBe("mirror");
 	});
 });

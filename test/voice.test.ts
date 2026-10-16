@@ -152,6 +152,19 @@ describe("Media.deliverReply", () => {
 		expect(voice.spoken).toEqual([]);
 	});
 
+	it("mirror me answers a typed message with text, even when Pi can't listen to voice notes", async () => {
+		settings.update((draft) => {
+			draft.voice = { understand: false, reply: true };
+			draft.voiceMode = "mirror";
+		});
+		await media.deliverReply("c", "Tamam.", { voiceIn: false });
+		settings.update((draft) => {
+			draft.voiceMode = "voice";
+		});
+		await media.deliverReply("c", "Tamam, hallettim.", { voiceIn: false, language: "tr" });
+		expect(kinds()).toEqual(["text", "voice"]);
+	});
+
 	it("sends text, not an empty voice note, when there is nothing to say", async () => {
 		await media.deliverReply("c", "👍", { voiceIn: true });
 		expect(kinds()).toEqual(["text"]);

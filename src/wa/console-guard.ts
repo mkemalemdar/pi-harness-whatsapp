@@ -1,10 +1,8 @@
-/**
- * libsignal (WhatsApp's encryption layer, used by Baileys) prints internal
- * session state — including key material — straight to the console with
- * console.info/warn/error. In Pi that tears up the terminal UI. This guard
- * drops console output that comes from libsignal and leaves everything else
- * alone. The content is never logged anywhere.
- */
+// libsignal (WhatsApp's encryption layer, used by Baileys) prints internal
+// session state — including key material — straight to the console with
+// console.info/warn/error. In Pi that tears up the terminal UI. This guard
+// drops console output that comes from libsignal and leaves everything else
+// alone. The content is never logged anywhere.
 
 import { createLogger } from "../log.ts";
 

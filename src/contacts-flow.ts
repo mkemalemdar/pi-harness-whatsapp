@@ -1,7 +1,5 @@
-/**
- * Dialog flow for "Allowed chats": pick from recent chats, add a number,
- * rename, remove, and mark the owner.
- */
+// Dialog flow for "Allowed chats": pick from recent chats, add a number,
+// rename, remove, and mark the owner.
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type Contact, normalizeContactId, type SettingsStore } from "./settings.ts";

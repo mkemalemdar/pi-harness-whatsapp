@@ -2,7 +2,8 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AnyMessageContent } from "baileys";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { Media, safeFileName } from "../src/media.ts";
 import { addLanguage, SettingsStore } from "../src/settings.ts";
 import { decodeToSamples, encodeVoiceNote } from "../src/voice/audio.ts";
@@ -16,38 +17,38 @@ import { SendQueue } from "../src/wa/outbound.ts";
 describe("language choice", () => {
 	const both = ["en", "tr"];
 	it("detects Turkish and English among the enabled languages", () => {
-		expect(detectLanguage("Testleri çalıştırdım ve hepsi geçti, başka ne yapayım?", both)).toBe("tr");
-		expect(detectLanguage("I ran the tests and they all passed, what next?", both)).toBe("en");
-		expect(detectLanguage("ok", both)).toBeUndefined();
-		expect(detectLanguage("anything", ["tr"])).toBe("tr");
+		assert.equal(detectLanguage("Testleri çalıştırdım ve hepsi geçti, başka ne yapayım?", both), "tr");
+		assert.equal(detectLanguage("I ran the tests and they all passed, what next?", both), "en");
+		assert.equal(detectLanguage("ok", both), undefined);
+		assert.equal(detectLanguage("anything", ["tr"]), "tr");
 		// Finnish and Swedish need the full language detector (franc-min doesn't know Finnish).
-		expect(detectLanguage("Hei, tänään on kaunis päivä ja menemme kauppaan ostamaan ruokaa.", ["en", "fi", "sv"])).toBe("fi");
-		expect(detectLanguage("Idag är det en vacker dag och vi ska handla mat i affären.", ["en", "fi", "sv"])).toBe("sv");
+		assert.equal(detectLanguage("Hei, tänään on kaunis päivä ja menemme kauppaan ostamaan ruokaa.", ["en", "fi", "sv"]), "fi");
+		assert.equal(detectLanguage("Idag är det en vacker dag och vi ska handla mat i affären.", ["en", "fi", "sv"]), "sv");
 	});
 
 	it("prefers a fixed reply language, then the text, then the user's language, then the default", () => {
-		expect(chooseSpeechLanguage("Hello there, how are you doing today?", { enabled: both, replyLanguage: "tr" })).toBe("tr");
-		expect(chooseSpeechLanguage("Merhaba, bugün nasılsın, her şey yolunda mı?", { enabled: both, replyLanguage: "mirror" })).toBe("tr");
-		expect(chooseSpeechLanguage("ok", { enabled: both, replyLanguage: "mirror", incoming: "tr" })).toBe("tr");
-		expect(chooseSpeechLanguage("ok", { enabled: both, replyLanguage: "mirror", incoming: "de" })).toBe("en");
+		assert.equal(chooseSpeechLanguage("Hello there, how are you doing today?", { enabled: both, replyLanguage: "tr" }), "tr");
+		assert.equal(chooseSpeechLanguage("Merhaba, bugün nasılsın, her şey yolunda mı?", { enabled: both, replyLanguage: "mirror" }), "tr");
+		assert.equal(chooseSpeechLanguage("ok", { enabled: both, replyLanguage: "mirror", incoming: "tr" }), "tr");
+		assert.equal(chooseSpeechLanguage("ok", { enabled: both, replyLanguage: "mirror", incoming: "de" }), "en");
 	});
 });
 
 describe("chunkText", () => {
 	it("keeps sentences together and cuts over-long ones at commas or spaces", () => {
-		expect(chunkText("One. Two.\n\nThree.", 300)).toEqual(["One. Two.", "Three."]);
+		assert.deepEqual(chunkText("One. Two.\n\nThree.", 300), ["One. Two.", "Three."]);
 		const chunks = chunkText(`${"alpha beta, ".repeat(60)}end`, 300);
-		expect(chunks.length).toBeGreaterThan(2);
-		expect(chunks.every((chunk) => chunk.length <= 300)).toBe(true);
-		expect(chunks.join(" ").replace(/\s+/g, " ")).toBe(`${"alpha beta, ".repeat(60)}end`.replace(/\s+/g, " "));
+		assert.ok(chunks.length > 2);
+		assert.equal(chunks.every((chunk) => chunk.length <= 300), true);
+		assert.equal(chunks.join(" ").replace(/\s+/g, " "), `${"alpha beta, ".repeat(60)}end`.replace(/\s+/g, " "));
 	});
 });
 
 describe("safeFileName", () => {
 	it("strips folders and odd characters and keeps the extension", () => {
-		expect(safeFileName("../../etc/pass wd.pdf", ".bin")).toMatch(/^pass wd-[\dT-]+Z\.pdf$/);
-		expect(safeFileName(undefined, ".txt")).toMatch(/^file-.*\.txt$/);
-		expect(safeFileName("we$ird;name", ".bin")).toMatch(/^we_ird_name-.*\.bin$/);
+		assert.match(safeFileName("../../etc/pass wd.pdf", ".bin"), /^pass wd-[\dT-]+Z\.pdf$/);
+		assert.match(safeFileName(undefined, ".txt"), /^file-.*\.txt$/);
+		assert.match(safeFileName("we$ird;name", ".bin"), /^we_ird_name-.*\.bin$/);
 	});
 });
 
@@ -110,8 +111,8 @@ describe("Media.deliverReply", () => {
 	it("mirror me: voice in → voice out, text in → text out", async () => {
 		await media.deliverReply("c", "Tamam, hallettim.", { voiceIn: true, language: "tr" });
 		await media.deliverReply("c", "Done.", { voiceIn: false });
-		expect(kinds()).toEqual(["voice", "text"]);
-		expect(voice.spoken[0]?.language).toBe("tr");
+		assert.deepEqual(kinds(), ["voice", "text"]);
+		assert.equal(voice.spoken[0]?.language, "tr");
 	});
 
 	it("voice + text sends both; off sends text only", async () => {
@@ -123,7 +124,7 @@ describe("Media.deliverReply", () => {
 			draft.voiceMode = "off";
 		});
 		await media.deliverReply("c", "All good.", { voiceIn: true });
-		expect(kinds()).toEqual(["text", "voice", "text"]);
+		assert.deepEqual(kinds(), ["text", "voice", "text"]);
 	});
 
 	it("speaks only the prose of code-heavy answers and also sends the text", async () => {
@@ -131,15 +132,15 @@ describe("Media.deliverReply", () => {
 			draft.voiceMode = "voice";
 		});
 		await media.deliverReply("c", `Here is the fix:\n\`\`\`ts\n${"const x = 1;\n".repeat(40)}\`\`\``, { voiceIn: true });
-		expect(kinds()).toEqual(["text", "voice"]);
-		expect(voice.spoken[0]?.text).toBe("Here is the fix:\n (code omitted)");
+		assert.deepEqual(kinds(), ["text", "voice"]);
+		assert.equal(voice.spoken[0]?.text, "Here is the fix:\n (code omitted)");
 	});
 
 	it("says so when a voice has to be downloaded first", async () => {
 		voice.installed = false;
 		await media.deliverReply("c", "Tamam.", { voiceIn: true, language: "tr" });
-		expect((sent[0] as { text: string }).text).toBe(`⏳ Getting the voice ready (one-time download, ~${SUPERTONIC_SPEC.approxMB} MB)…`);
-		expect("audio" in sent[1]!).toBe(true);
+		assert.equal((sent[0] as { text: string }).text, `⏳ Getting the voice ready (one-time download, ~${SUPERTONIC_SPEC.approxMB} MB)…`);
+		assert.equal("audio" in sent[1]!, true);
 	});
 
 	it("only ever sends text while voice replies are off, whatever the reply type", async () => {
@@ -148,8 +149,8 @@ describe("Media.deliverReply", () => {
 			draft.voiceMode = "voice";
 		});
 		await media.deliverReply("c", "Tamam, hallettim.", { voiceIn: true, language: "tr" });
-		expect(kinds()).toEqual(["text"]);
-		expect(voice.spoken).toEqual([]);
+		assert.deepEqual(kinds(), ["text"]);
+		assert.equal(voice.spoken.length, 0);
 	});
 
 	it("mirror me answers a typed message with text, even when Pi can't listen to voice notes", async () => {
@@ -162,20 +163,20 @@ describe("Media.deliverReply", () => {
 			draft.voiceMode = "voice";
 		});
 		await media.deliverReply("c", "Tamam, hallettim.", { voiceIn: false, language: "tr" });
-		expect(kinds()).toEqual(["text", "voice"]);
+		assert.deepEqual(kinds(), ["text", "voice"]);
 	});
 
 	it("sends text, not an empty voice note, when there is nothing to say", async () => {
 		await media.deliverReply("c", "👍", { voiceIn: true });
-		expect(kinds()).toEqual(["text"]);
-		expect(voice.spoken).toEqual([]);
+		assert.deepEqual(kinds(), ["text"]);
+		assert.equal(voice.spoken.length, 0);
 	});
 
 	it("says why, without a download notice, when voice can't work on this machine", async () => {
 		voice.installed = false;
 		voice.unavailable = async () => "ffmpeg is not installed (needed for voice notes)";
 		await media.deliverReply("c", "Tamam.", { voiceIn: true, language: "tr" });
-		expect(sent.map((content) => (content as { text: string }).text)).toEqual([
+		assert.deepEqual(sent.map((content) => (content as { text: string }).text), [
 			"Tamam.",
 			"(couldn't make a voice note: ffmpeg is not installed (needed for voice notes))",
 		]);
@@ -187,7 +188,7 @@ describe("Media.deliverReply", () => {
 		});
 		voice.fail = true;
 		await media.deliverReply("c", "Short answer.", { voiceIn: true });
-		expect(sent.map((content) => (content as { text: string }).text)).toEqual(["Short answer.", "(couldn't make a voice note: no voice)"]);
+		assert.deepEqual(sent.map((content) => (content as { text: string }).text), ["Short answer.", "(couldn't make a voice note: no voice)"]);
 	});
 });
 
@@ -197,33 +198,35 @@ const realModels = join(process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi"
 const store = new ModelStore(realModels);
 const haveModels = existsSync(realModels) && [RUNTIME_SPEC, WHISPER_SPEC, SUPERTONIC_SPEC].every((spec) => store.isInstalled(spec));
 
-describe.skipIf(!haveModels)("speech engine (real models)", () => {
-	it("speaks Turkish and hears it back", async () => {
+describe("speech engine (real models)", { skip: !haveModels && "the speech models aren't installed here" }, () => {
+	it("speaks Turkish and hears it back", { timeout: 120_000 }, async () => {
 		const engine = new SpeechEngine(() => store.dir(RUNTIME_SPEC));
 		try {
 			const text = "Merhaba, bütün testler başarıyla geçti ve yeni sayfaya başlıyorum.";
 			const spoken = await engine.speak(store.dir(SUPERTONIC_SPEC), text, "tr", "F1", 1);
 			const note = await encodeVoiceNote(spoken.samples, spoken.sampleRate);
-			expect(note.audio.subarray(0, 4).toString()).toBe("OggS");
+			assert.equal(note.audio.subarray(0, 4).toString(), "OggS");
 			const heard = await engine.transcribe(store.dir(WHISPER_SPEC), await decodeToSamples(note.audio));
-			expect(detectLanguage(heard.text, ["en", "tr"])).toBe("tr");
+			assert.equal(detectLanguage(heard.text, ["en", "tr"]), "tr");
 			const expected = ["merhaba", "bütün", "testler", "başarıyla", "geçti", "yeni", "sayfaya", "başlıyorum"];
 			const got = heard.text.toLocaleLowerCase("tr");
-			expect(expected.filter((word) => got.includes(word)).length).toBeGreaterThanOrEqual(6);
+			assert.ok(expected.filter((word) => got.includes(word)).length >= 6);
 		} finally {
 			await engine.unload();
 		}
-	}, 120_000);
+	});
 });
 
 describe("Media.prepare", () => {
-	it("attaches the image a message replies to", async () => {
+	it("attaches the image a message replies to", async (t) => {
+		const dir = mkdtempSync(join(tmpdir(), "phw-media-"));
+		t.after(() => rmSync(dir, { recursive: true, force: true }));
 		const media = new Media({
-			settings: new SettingsStore(join(mkdtempSync(join(tmpdir(), "phw-media-")), "config.json")),
+			settings: new SettingsStore(join(dir, "config.json")),
 			connection: { download: async () => Buffer.from("jpegbytes"), presence: async () => {} },
 			queue: {} as SendQueue,
 			voice: {} as VoiceService,
-			inboxDir: tmpdir(),
+			inboxDir: join(dir, "inbox"),
 		});
 		const message = {
 			id: "1", chatJid: "120363000000000001@g.us", senderJid: "905551234567@s.whatsapp.net", isGroup: true, fromMe: false,
@@ -231,7 +234,7 @@ describe("Media.prepare", () => {
 			quotedImage: { mimetype: "image/png" }, raw: {},
 		} as unknown as Parameters<Media["prepare"]>[0];
 		const prepared = await media.prepare(message, () => "[WhatsApp group]");
-		expect(prepared.content).toEqual([
+		assert.deepEqual(prepared.content, [
 			{ type: "text", text: "[WhatsApp group] @Pi bu ne? [the image they replied to is attached]" },
 			{ type: "image", data: Buffer.from("jpegbytes").toString("base64"), mimeType: "image/png" },
 		]);
@@ -248,9 +251,9 @@ describe("cleanInbox", () => {
 		writeFileSync(join(dir, "new.pdf"), "y");
 		const old = (Date.now() - INBOX_KEEP_MS - 60_000) / 1000;
 		utimesSync(join(dir, "old.pdf"), old, old);
-		expect(cleanInbox(dir)).toBe(1);
-		expect(readdirSync(dir)).toEqual(["new.pdf"]);
-		expect(cleanInbox(join(dir, "missing"))).toBe(0);
+		assert.equal(cleanInbox(dir), 1);
+		assert.deepEqual(readdirSync(dir), ["new.pdf"]);
+		assert.equal(cleanInbox(join(dir, "missing")), 0);
 		rmSync(dir, { recursive: true, force: true });
 	});
 });

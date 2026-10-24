@@ -1,8 +1,6 @@
-/**
- * npm keeps a copy of every package it downloads in its cache (~/.npm/_cacache),
- * even after the package is uninstalled. This removes the copies of this
- * extension and of the packages it brought with it, and nothing else.
- */
+// npm keeps a copy of every package it downloads in its cache (~/.npm/_cacache),
+// even after the package is uninstalled. This removes the copies of this
+// extension and of the packages it brought with it, and nothing else.
 
 import { existsSync, readdirSync, readFileSync, rmdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";

@@ -1,4 +1,4 @@
-/** ffmpeg helpers: WhatsApp audio ↔ raw samples. Everything goes through pipes, no temp files. */
+// ffmpeg helpers: WhatsApp audio ↔ raw samples. Everything goes through pipes, no temp files.
 
 import { spawn } from "node:child_process";
 

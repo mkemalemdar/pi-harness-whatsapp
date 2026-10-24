@@ -1,8 +1,6 @@
-/**
- * Settings: global defaults in config.json, plus a small per-session state
- * (WhatsApp on/off, auto-compaction) stored as custom session entries so a
- * continued session gets its own values back.
- */
+// Settings: global defaults in config.json, plus a small per-session state
+// (WhatsApp on/off, auto-compaction) stored as custom session entries so a
+// continued session gets its own values back.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -209,7 +207,11 @@ export class SettingsStore {
 	/** The file is from a version without the voice switches (see Controller.migrateVoice). */
 	private olderFile = false;
 
-	constructor(private readonly filePath: string) {}
+	private readonly filePath: string;
+
+	constructor(filePath: string) {
+		this.filePath = filePath;
+	}
 
 	/** Reads the file. A corrupt file is kept as config.json.bad-<time> and replaced by defaults. */
 	load(): Readonly<GlobalSettings> {

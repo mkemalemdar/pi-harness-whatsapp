@@ -1,10 +1,8 @@
-/**
- * Pi ↔ WhatsApp: turns allowed WhatsApp messages into Pi prompts and sends
- * Pi's answers back — automatically, without the model calling a tool.
- *
- * Only runs started (or continued) by a WhatsApp message reply to WhatsApp;
- * prompts typed in the terminal stay in the terminal.
- */
+// Pi ↔ WhatsApp: turns allowed WhatsApp messages into Pi prompts and sends
+// Pi's answers back — automatically, without the model calling a tool.
+//
+// Only runs started (or continued) by a WhatsApp message reply to WhatsApp;
+// prompts typed in the terminal stay in the terminal.
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { WAMessage } from "baileys";
@@ -147,7 +145,11 @@ export class Bridge {
 	private readonly ignoredNotified = new Set<string>();
 	private onboarding = false;
 
-	constructor(private readonly deps: BridgeDeps) {}
+	private readonly deps: BridgeDeps;
+
+	constructor(deps: BridgeDeps) {
+		this.deps = deps;
+	}
 
 	/** Called whenever WhatsApp is turned on. */
 	markEnabled(now = Date.now()): void {

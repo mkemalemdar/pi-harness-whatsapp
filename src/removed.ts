@@ -1,9 +1,7 @@
-/**
- * "Remove everything": once the extension's data is deleted, nothing may write
- * files again in this Pi process (log, settings, recent chats, login, speech
- * files), or the cleanup would leave new leftovers. The flag lives on
- * globalThis so it also holds if Pi loads the extension again (/new, /reload).
- */
+// "Remove everything": once the extension's data is deleted, nothing may write
+// files again in this Pi process (log, settings, recent chats, login, speech
+// files), or the cleanup would leave new leftovers. The flag lives on
+// globalThis so it also holds if Pi loads the extension again (/new, /reload).
 
 const state = globalThis as typeof globalThis & { __piHarnessWhatsAppRemoved?: boolean };
 

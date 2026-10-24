@@ -1,18 +1,24 @@
 {
   "compilerOptions": {
     "target": "ES2023",
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
-    "lib": ["ES2023"],
-    "types": ["node"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
     "skipLibCheck": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true
+    "types": [
+      "node"
+    ]
   },
-  "include": ["index.ts", "src/**/*.ts", "test/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts"
+  ]
 }

@@ -1,5 +1,6 @@
 import type { AnyMessageContent } from "baileys";
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import { formatActivity, formatDuration, formatTouchedFiles, RunReport } from "../src/run-report.ts";
 import { SendQueue, type Sender } from "../src/wa/outbound.ts";
 
@@ -14,22 +15,20 @@ describe("RunReport", () => {
 		report.toolEnded("2", false);
 		report.toolEnded("3", false);
 		report.toolEnded("4", true);
-		expect(report.summary(134_000)).toBe("⚠️ 3/4 tool calls ok · ⏱ 2m 14s");
-		expect(report.touchedFiles()).toEqual(["notes.md", "src/b.ts"]);
-		expect(formatActivity(report.recentSteps(2), report.toolCount)).toBe(
-			"… 2 earlier steps\n🔧 write: notes.md ✓\n🔧 bash: npm test ✗",
-		);
+		assert.equal(report.summary(134_000), "⚠️ 3/4 tool calls ok · ⏱ 2m 14s");
+		assert.deepEqual(report.touchedFiles(), ["notes.md", "src/b.ts"]);
+		assert.equal(formatActivity(report.recentSteps(2), report.toolCount), "… 2 earlier steps\n🔧 write: notes.md ✓\n🔧 bash: npm test ✗");
 	});
 
 	it("handles runs without tools", () => {
-		expect(new RunReport("/", 0).summary(5_000)).toBe("✅ no tool calls · ⏱ 5s");
-		expect(formatTouchedFiles([])).toBeUndefined();
+		assert.equal(new RunReport("/", 0).summary(5_000), "✅ no tool calls · ⏱ 5s");
+		assert.equal(formatTouchedFiles([]), undefined);
 	});
 
 	it("formats durations", () => {
-		expect(formatDuration(0)).toBe("0s");
-		expect(formatDuration(59_400)).toBe("59s");
-		expect(formatDuration(3_725_000)).toBe("1h 2m");
+		assert.equal(formatDuration(0), "0s");
+		assert.equal(formatDuration(59_400), "59s");
+		assert.equal(formatDuration(3_725_000), "1h 2m");
 	});
 });
 
@@ -58,30 +57,30 @@ describe("SendQueue", () => {
 		const sender = new FakeSender();
 		const queue = new SendQueue(sender, { sleep: noSleep });
 		await Promise.all([queue.sendText("a", "**one**"), queue.sendText("a", "two")]);
-		expect(sender.sent.map((entry) => (entry.content as { text: string }).text)).toEqual(["*one*", "two"]);
+		assert.deepEqual(sender.sent.map((entry) => (entry.content as { text: string }).text), ["*one*", "two"]);
 	});
 
 	it("retries failures and gives up after the limit", async () => {
 		const sender = new FakeSender();
 		const queue = new SendQueue(sender, { sleep: noSleep, retries: 3 });
 		sender.failures = 2;
-		expect(await queue.enqueue("a", { text: "x" })).toMatchObject({ id: "m1" });
+		assert.partialDeepStrictEqual(await queue.enqueue("a", { text: "x" }), { id: "m1" });
 		sender.failures = 5;
-		expect(await queue.enqueue("a", { text: "y" })).toBeUndefined();
+		assert.equal(await queue.enqueue("a", { text: "y" }), undefined);
 		// A group gets two extra attempts.
 		sender.failures = 4;
-		expect(await queue.enqueue("1@g.us", { text: "z" })).toBeDefined();
+		assert.notEqual(await queue.enqueue("1@g.us", { text: "z" }), undefined);
 	});
 
 	it("drops messages while closed or offline", async () => {
 		const sender = new FakeSender();
 		const queue = new SendQueue(sender, { sleep: noSleep, offlineWaitMs: 0 });
 		sender.open = false;
-		expect(await queue.enqueue("a", { text: "x" })).toBeUndefined();
+		assert.equal(await queue.enqueue("a", { text: "x" }), undefined);
 		sender.open = true;
 		queue.close();
-		expect(await queue.enqueue("a", { text: "x" })).toBeUndefined();
+		assert.equal(await queue.enqueue("a", { text: "x" }), undefined);
 		queue.reopen();
-		expect(await queue.enqueue("a", { text: "x" })).toBeDefined();
+		assert.notEqual(await queue.enqueue("a", { text: "x" }), undefined);
 	});
 });

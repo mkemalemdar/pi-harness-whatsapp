@@ -1,8 +1,6 @@
-/**
- * Voice: understands voice notes (Whisper turbo) and speaks replies
- * (Supertonic 3), both on OpenVINO. Files download on first use, or when the
- * user says "Now" after changing settings.
- */
+// Voice: understands voice notes (Whisper turbo) and speaks replies
+// (Supertonic 3), both on OpenVINO. Files download on first use, or when the
+// user says "Now" after changing settings.
 
 import { getLanguage, LANGUAGES, languageLabel, VOICES } from "../languages.ts";
 import { createLogger } from "../log.ts";
@@ -34,11 +32,16 @@ export class VoiceService {
 	readonly engine: SpeechEngine;
 	private hasFfmpeg = false;
 
+	private readonly settings: SettingsStore;
+	private readonly events: VoiceEvents;
+
 	constructor(
-		private readonly settings: SettingsStore,
+		settings: SettingsStore,
 		modelsDir: string,
-		private readonly events: VoiceEvents = {},
+		events: VoiceEvents = {},
 	) {
+		this.settings = settings;
+		this.events = events;
 		this.models = new ModelStore(modelsDir, (spec, fraction) => this.events.onDownload?.(spec, fraction));
 		this.engine = new SpeechEngine(() => this.models.dir(RUNTIME_SPEC));
 	}

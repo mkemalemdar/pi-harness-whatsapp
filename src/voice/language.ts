@@ -1,4 +1,4 @@
-/** Which language a text is in, limited to the languages the user enabled. */
+// Which language a text is in, limited to the languages the user enabled.
 
 import { franc } from "franc";
 import { getLanguage } from "../languages.ts";

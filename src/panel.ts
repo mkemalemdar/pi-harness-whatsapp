@@ -1,8 +1,6 @@
-/**
- * The /whatsapp settings panel. Every row opens a submenu; nothing changes
- * while you just look around. Only "Allowed chats" leaves the panel (it uses
- * dialogs to type numbers and names) and the panel reopens afterwards.
- */
+// The /whatsapp settings panel. Every row opens a submenu; nothing changes
+// while you just look around. Only "Allowed chats" leaves the panel (it uses
+// dialogs to type numbers and names) and the panel reopens afterwards.
 
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";

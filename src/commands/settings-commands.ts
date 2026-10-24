@@ -1,4 +1,4 @@
-/** /voice, /lang, /speed, /replies — the same settings as the terminal panel. */
+// /voice, /lang, /speed, /replies — the same settings as the terminal panel.
 
 import { languageLabel } from "../languages.ts";
 import { formatSpeed, REPLY_TOGGLES, replyLanguageLabel, VOICE_MODE_LABELS } from "../panel-model.ts";

@@ -1,4 +1,4 @@
-/** Runs a program and collects its output. Never throws: a missing program comes back as code null. */
+// Runs a program and collects its output. Never throws: a missing program comes back as code null.
 
 import { spawn } from "node:child_process";
 

@@ -1,7 +1,5 @@
-/**
- * Single-instance lock: only one Pi process may hold the WhatsApp login at a
- * time, otherwise the two connections keep kicking each other off.
- */
+// Single-instance lock: only one Pi process may hold the WhatsApp login at a
+// time, otherwise the two connections keep kicking each other off.
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
@@ -67,10 +65,16 @@ function readHolder(file: string): LockHolder | undefined {
 export class ConnectionLock {
 	private held = false;
 
+	private readonly file: string;
+	private readonly pid: number;
+
 	constructor(
-		private readonly file: string,
-		private readonly pid = process.pid,
-	) {}
+		file: string,
+		pid: number = process.pid,
+	) {
+		this.file = file;
+		this.pid = pid;
+	}
 
 	/** Takes the lock unless another live process on this machine holds it. */
 	acquire(): LockResult {

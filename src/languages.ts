@@ -1,10 +1,8 @@
-/**
- * Languages the extension can listen to and speak.
- *
- * One multilingual Whisper model understands every language, and one
- * Supertonic model speaks all of them, so a language needs no extra download.
- * Every language listed here is one Supertonic speaks.
- */
+// Languages the extension can listen to and speak.
+//
+// One multilingual Whisper model understands every language, and one
+// Supertonic model speaks all of them, so a language needs no extra download.
+// Every language listed here is one Supertonic speaks.
 
 export interface VoiceOption {
 	id: string;

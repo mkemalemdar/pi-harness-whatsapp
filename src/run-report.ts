@@ -1,7 +1,5 @@
-/**
- * Collects what happened during one WhatsApp-started run: tool calls (and
- * whether they worked), files written or edited, and how long it took.
- */
+// Collects what happened during one WhatsApp-started run: tool calls (and
+// whether they worked), files written or edited, and how long it took.
 
 import { isAbsolute, relative } from "node:path";
 
@@ -50,10 +48,13 @@ export class RunReport {
 	private readonly steps = new Map<string, ToolStep>();
 	private readonly files = new Set<string>();
 
+	private readonly cwd: string;
+
 	constructor(
-		private readonly cwd: string,
+		cwd: string,
 		now = Date.now(),
 	) {
+		this.cwd = cwd;
 		this.startedAt = now;
 	}
 

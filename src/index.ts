@@ -1,13 +1,11 @@
-/**
- * pi-harness-whatsapp — talk to Pi from WhatsApp.
- *
- * This file only wires Pi's extension API to the Controller. Nothing is
- * started here: connections begin in session_start, as Pi requires.
- */
+// pi-harness-whatsapp — talk to Pi from WhatsApp.
+//
+// This file only wires Pi's extension API to the Controller. Nothing is
+// started here: connections begin in session_start, as Pi requires.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Controller, NEW_SESSION_ARG } from "./src/controller.ts";
-import { registerTools, setToolsActive, TOOL_NAMES } from "./src/tools.ts";
+import { Controller, NEW_SESSION_ARG } from "./controller.ts";
+import { registerTools, setToolsActive, TOOL_NAMES } from "./tools.ts";
 
 export default function piHarnessWhatsApp(pi: ExtensionAPI) {
 	pi.registerFlag("whatsapp", {

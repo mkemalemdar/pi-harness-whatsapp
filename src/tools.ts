@@ -1,8 +1,6 @@
-/**
- * Optional tools for the model while WhatsApp is on. Normal replies never
- * need them (they're sent automatically); these are for extras like "send me
- * that screenshot". They only reach allowed contacts.
- */
+// Optional tools for the model while WhatsApp is on. Normal replies never
+// need them (they're sent automatically); these are for extras like "send me
+// that screenshot". They only reach allowed contacts.
 
 import { readFileSync, statSync } from "node:fs";
 import { basename, extname, isAbsolute, resolve } from "node:path";

@@ -1,7 +1,5 @@
-/**
- * WhatsApp commands ("/help", "/model", …). They are handled here and never
- * reach the model. Commands that change Pi respect "Command access".
- */
+// WhatsApp commands ("/help", "/model", …). They are handled here and never
+// reach the model. Commands that change Pi respect "Command access".
 
 import type { CommandHandler } from "../bridge.ts";
 import { createLogger } from "../log.ts";
@@ -28,7 +26,10 @@ export function parseCommand(text: string): { name: string; args: string } | und
 export class CommandRouter implements CommandHandler {
 	readonly commands: Command[];
 
-	constructor(private readonly env: CommandEnv) {
+	private readonly env: CommandEnv;
+
+	constructor(env: CommandEnv) {
+		this.env = env;
 		this.commands = allCommands();
 	}
 

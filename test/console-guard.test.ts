@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import { calledFromLibsignal } from "../src/wa/console-guard.ts";
 
 describe("calledFromLibsignal", () => {
@@ -13,8 +14,8 @@ describe("calledFromLibsignal", () => {
 			"    at console.info (/x/src/wa/console-guard.ts:30:10)",
 			"    at somethingElse (/x/node_modules/other-extension/index.js:1:1)",
 		].join("\n");
-		expect(calledFromLibsignal(fromLibsignal)).toBe(true);
-		expect(calledFromLibsignal(fromElsewhere)).toBe(false);
-		expect(calledFromLibsignal(undefined)).toBe(false);
+		assert.equal(calledFromLibsignal(fromLibsignal), true);
+		assert.equal(calledFromLibsignal(fromElsewhere), false);
+		assert.equal(calledFromLibsignal(undefined), false);
 	});
 });

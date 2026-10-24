@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.4 — 2026-10-24
+
+- The data folder follows pi's own agent folder setting exactly (`PI_CODING_AGENT_DIR`, also with `~`).
+- `baileys` is a version range instead of one exact version, and the pi packages it works with are stated as ranges.
+- Development: the entry file is `src/index.ts`, the tests use Node's own test runner (no vitest), and the type check
+  and tests run on GitHub for every push, on Linux and macOS.
+
 ## 0.1.3 — 2026-10-16
 
 - No more npm warning about skipped install scripts when installing from GitHub (the two scripts, version checks in `baileys` and `protobufjs`, are now refused explicitly; they never ran before either).

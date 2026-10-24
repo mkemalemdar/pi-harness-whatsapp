@@ -1,9 +1,7 @@
-/**
- * Markdown (what models write) → WhatsApp formatting, and splitting long
- * messages without breaking code blocks.
- *
- * WhatsApp supports *bold*, _italic_, ~strike~, `inline code` and ```blocks```.
- */
+// Markdown (what models write) → WhatsApp formatting, and splitting long
+// messages without breaking code blocks.
+//
+// WhatsApp supports *bold*, _italic_, ~strike~, `inline code` and ```blocks```.
 
 export const MAX_MESSAGE_LENGTH = 4000;
 

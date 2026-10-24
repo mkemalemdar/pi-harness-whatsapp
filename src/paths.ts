@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, readdirSync, rmdirSync, rmSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 /**
  * Where the extension keeps its data. PI_HARNESS_WHATSAPP_DIR overrides it
@@ -8,8 +8,7 @@ import { join } from "node:path";
  */
 export function dataDir(): string {
 	if (process.env.PI_HARNESS_WHATSAPP_DIR) return process.env.PI_HARNESS_WHATSAPP_DIR;
-	const agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
-	return join(agentDir, "pi-harness-whatsapp");
+	return join(getAgentDir(), "pi-harness-whatsapp");
 }
 
 /** Folders the extension creates: only this user may open them (the data folder holds the WhatsApp login). */

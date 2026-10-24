@@ -1,13 +1,11 @@
-/**
- * The speech engine: Whisper (speech-to-text) and Supertonic (text-to-speech),
- * both running on OpenVINO on the CPU.
- *
- * OpenVINO does the heavy work on its own threads (the calls are async), so
- * Pi's terminal stays responsive. Models load on first use and are released
- * after 10 minutes without voice work. OpenVINO itself is loaded lazily from
- * the folder it was downloaded to (see models.ts), so the extension loads fine
- * before it is there.
- */
+// The speech engine: Whisper (speech-to-text) and Supertonic (text-to-speech),
+// both running on OpenVINO on the CPU.
+//
+// OpenVINO does the heavy work on its own threads (the calls are async), so
+// Pi's terminal stays responsive. Models load on first use and are released
+// after 10 minutes without voice work. OpenVINO itself is loaded lazily from
+// the folder it was downloaded to (see models.ts), so the extension loads fine
+// before it is there.
 
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -31,8 +29,12 @@ export class SpeechEngine {
 	/** One job at a time: a loaded model can't run two requests at once. */
 	private queue: Promise<unknown> = Promise.resolve();
 
+	private readonly runtimeDir: () => string;
+
 	/** `runtimeDir` holds node_modules/openvino-node and node_modules/openvino-genai-node. */
-	constructor(private readonly runtimeDir: () => string) {}
+	constructor(runtimeDir: () => string) {
+		this.runtimeDir = runtimeDir;
+	}
 
 	isLoaded(): boolean {
 		return !!this.whisper || !!this.tts;

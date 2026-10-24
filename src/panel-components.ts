@@ -1,8 +1,6 @@
-/**
- * Small building blocks for the /whatsapp submenus: a list menu (choices,
- * checkboxes and buttons, each with a short description), a text input step,
- * and a stack that lets menus open deeper menus and go back with Esc.
- */
+// Small building blocks for the /whatsapp submenus: a list menu (choices,
+// checkboxes and buttons, each with a short description), a text input step,
+// and a stack that lets menus open deeper menus and go back with Esc.
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Input, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
@@ -66,10 +64,15 @@ export class ListMenu implements Component {
 	/** A result shown next to its row (or under the list), cleared on the next key press. */
 	private status: { text: string; tone: Tone; itemId?: string } | undefined;
 
+	private readonly theme: Theme;
+	private readonly options: ListMenuOptions;
+
 	constructor(
-		private readonly theme: Theme,
-		private readonly options: ListMenuOptions,
+		theme: Theme,
+		options: ListMenuOptions,
 	) {
+		this.theme = theme;
+		this.options = options;
 		this.items = options.items;
 		const initial = options.initialId ? this.items.findIndex((item) => item.id === options.initialId) : -1;
 		this.index = initial >= 0 ? initial : this.firstEnabled();
@@ -202,14 +205,21 @@ export class InputStep implements Component {
 	private readonly input = new Input();
 	private error: string | undefined;
 
+	private readonly theme: Theme;
+	private readonly title: string;
+	private readonly description: string;
+
 	constructor(
-		private readonly theme: Theme,
-		private readonly title: string,
-		private readonly description: string,
+		theme: Theme,
+		title: string,
+		description: string,
 		initial: string,
 		onSubmit: (value: string) => string | undefined,
 		onCancel: () => void,
 	) {
+		this.theme = theme;
+		this.title = title;
+		this.description = description;
 		this.input.setValue(initial);
 		this.input.focused = true;
 		this.input.onSubmit = (value) => {
@@ -248,11 +258,17 @@ export class InputStep implements Component {
 export class MenuStack implements Component {
 	private readonly stack: Component[] = [];
 
+	private readonly onEmpty: () => void;
+	private readonly onReturn: () => void;
+
 	constructor(
-		private readonly onEmpty: () => void,
+		onEmpty: () => void,
 		/** Called whenever a menu closes and an earlier one is shown again. */
-		private readonly onReturn: () => void = () => {},
-	) {}
+		onReturn: () => void = () => {},
+	) {
+		this.onEmpty = onEmpty;
+		this.onReturn = onReturn;
+	}
 
 	push(component: Component): void {
 		this.stack.push(component);

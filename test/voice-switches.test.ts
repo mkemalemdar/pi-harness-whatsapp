@@ -2,14 +2,15 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { after, before, describe, it } from "node:test";
 
 const dir = mkdtempSync(join(tmpdir(), "phw-voice-switch-"));
 const previous = process.env.PI_HARNESS_WHATSAPP_DIR;
-beforeAll(() => {
+before(() => {
 	process.env.PI_HARNESS_WHATSAPP_DIR = dir;
 });
-afterAll(() => {
+after(() => {
 	process.env.PI_HARNESS_WHATSAPP_DIR = previous;
 	rmSync(dir, { recursive: true, force: true });
 });
@@ -38,10 +39,10 @@ describe("starting after an update", () => {
 		mkdirSync(join(dir, "models", ".sherpa-onnx-whisper-small.downloading"));
 		const controller = new Controller(pi as never);
 		await controller.onSessionStart({ type: "session_start", reason: "startup" } as never, ctx as never);
-		expect(controller.settings.get().voice).toEqual({ understand: true, reply: false });
-		expect(controller.settings.get().voiceMode).toBe("off");
-		expect(readdirSync(join(dir, "models")).sort()).toEqual(["openvino-runtime", "whisper-large-v3-turbo-int8-ov"]);
-		expect(controller.voice.neededModels().map((spec) => spec.name)).toEqual(["openvino-runtime", "whisper-large-v3-turbo-int8-ov"]);
+		assert.deepEqual(controller.settings.get().voice, { understand: true, reply: false });
+		assert.equal(controller.settings.get().voiceMode, "off");
+		assert.deepEqual(readdirSync(join(dir, "models")).sort(), ["openvino-runtime", "whisper-large-v3-turbo-int8-ov"]);
+		assert.deepEqual(controller.voice.neededModels().map((spec) => spec.name), ["openvino-runtime", "whisper-large-v3-turbo-int8-ov"]);
 		await controller.onSessionShutdown();
 	});
 
@@ -50,15 +51,15 @@ describe("starting after an update", () => {
 		rmSync(join(dir, "config.json"), { force: true });
 		const controller = new Controller(pi as never);
 		await controller.onSessionStart({ type: "session_start", reason: "startup" } as never, ctx as never);
-		expect(controller.settings.get().voice).toEqual({ understand: false, reply: false });
-		expect(controller.voice.neededModels()).toEqual([]);
-		expect(controller.voice.statusLine()).toBe("Voice: off");
+		assert.deepEqual(controller.settings.get().voice, { understand: false, reply: false });
+		assert.equal(controller.voice.neededModels().length, 0);
+		assert.equal(controller.voice.statusLine(), "Voice: off");
 		// Nothing was written just by starting.
-		expect(existsSync(join(dir, "config.json"))).toBe(false);
+		assert.equal(existsSync(join(dir, "config.json")), false);
 		await controller.onSessionShutdown();
 	});
 
-	it.runIf(process.platform !== "win32")("makes the data folder and the login private, also for older installs", async () => {
+	it("makes the data folder and the login private, also for older installs", { skip: process.platform === "win32" && "file modes don't apply on Windows" }, async () => {
 		const { Controller } = await import("../src/controller.ts");
 		mkdirSync(join(dir, "auth"), { recursive: true });
 		writeFileSync(join(dir, "auth", "creds.json"), "{}");
@@ -68,7 +69,7 @@ describe("starting after an update", () => {
 		const controller = new Controller(pi as never);
 		await controller.onSessionStart({ type: "session_start", reason: "startup" } as never, ctx as never);
 		const mode = (path: string) => statSync(path).mode & 0o777;
-		expect([mode(dir), mode(join(dir, "auth")), mode(join(dir, "auth", "creds.json"))]).toEqual([0o700, 0o700, 0o600]);
+		assert.deepEqual([mode(dir), mode(join(dir, "auth")), mode(join(dir, "auth", "creds.json"))], [0o700, 0o700, 0o600]);
 		await controller.onSessionShutdown();
 		// Folders created later are private from the start.
 		const fresh = join(dir, "..", `${dir.split("/").pop()}-fresh`);
@@ -78,7 +79,7 @@ describe("starting after an update", () => {
 		store.update((draft) => {
 			draft.voiceSpeed = 1.1;
 		});
-		expect(mode(fresh)).toBe(0o700);
+		assert.equal(mode(fresh), 0o700);
 		rmSync(fresh, { recursive: true, force: true });
 	});
 
@@ -91,6 +92,6 @@ describe("starting after an update", () => {
 			draft.voice = { understand: false, reply: true };
 		});
 		await controller.removeSpeechFiles(["whisper-large-v3-turbo-int8-ov"]);
-		expect(readdirSync(join(dir, "models")).sort()).toEqual(["openvino-runtime", "supertonic-3"]);
+		assert.deepEqual(readdirSync(join(dir, "models")).sort(), ["openvino-runtime", "supertonic-3"]);
 	});
 });

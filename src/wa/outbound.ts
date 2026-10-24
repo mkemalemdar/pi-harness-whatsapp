@@ -1,7 +1,5 @@
-/**
- * Everything we send goes through one queue, in order, with retries. Sending
- * waits a little for a dropped connection to come back instead of failing.
- */
+// Everything we send goes through one queue, in order, with retries. Sending
+// waits a little for a dropped connection to come back instead of failing.
 
 import type { AnyMessageContent, WAMessageKey } from "baileys";
 import { markdownToWhatsApp, splitMessage } from "../format.ts";
@@ -32,10 +30,13 @@ export class SendQueue {
 	private readonly sleep: (ms: number) => Promise<void>;
 	private closed = false;
 
+	private readonly sender: Sender;
+
 	constructor(
-		private readonly sender: Sender,
+		sender: Sender,
 		options: QueueOptions = {},
 	) {
+		this.sender = sender;
 		this.offlineWaitMs = options.offlineWaitMs ?? 30_000;
 		this.retries = options.retries ?? 3;
 		this.sleep = options.sleep ?? defaultSleep;

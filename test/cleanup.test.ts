@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { cacheKeysFor, cleanNpmCache, installedTree } from "../src/cleanup/npm-cache.ts";
 import type { Runner } from "../src/cleanup/run.ts";
 import { manualCommand, readSetupRecord, removeItem, type SetupItem } from "../src/cleanup/setup-record.ts";
@@ -30,7 +31,7 @@ describe("npm cache", () => {
 		pkg(join(root, "franc", "node_modules", "trigram-utils"), "trigram-utils", "2.0.1");
 		pkg(join(root, "trigram-utils"), "trigram-utils", "1.0.0");
 		pkg(join(root, "unrelated"), "unrelated", "1.0.0");
-		expect(installedTree(join(root, "pi-harness-whatsapp")).map((entry) => `${entry.name}@${entry.version}`)).toEqual([
+		assert.deepEqual(installedTree(join(root, "pi-harness-whatsapp")).map((entry) => `${entry.name}@${entry.version}`), [
 			"pi-harness-whatsapp@0.1.1",
 			"baileys@7.0.0-rc14",
 			"@hapi/boom@9.1.4",
@@ -60,7 +61,7 @@ describe("npm cache", () => {
 			{ name: "baileys", version: "7.0.0-rc14" },
 			{ name: "@hapi/boom", version: "9.1.4" },
 		];
-		expect(cacheKeysFor(keys, packages)).toEqual(keys.slice(0, 4).concat(keys.slice(5, 7), keys.slice(10, 12)));
+		assert.deepEqual(cacheKeysFor(keys, packages), keys.slice(0, 4).concat(keys.slice(5, 7), keys.slice(10, 12)));
 	});
 
 	it("deletes our entries, their content and their index files, and keeps what others use", async () => {
@@ -92,16 +93,16 @@ describe("npm cache", () => {
 		entry(`${KEY}/old`, "old bytes");
 		entry(`${KEY}/old`, null);
 
-		expect(await cleanNpmCache(join(root, "pi-harness-whatsapp"), async () => ({ code: 0, stdout: "", stderr: "" }), join(dir, "npm-cache"))).toBe(3);
-		expect(existsSync(index(`${KEY}/franc`))).toBe(false);
-		expect(existsSync(index(`${KEY}/franc/-/franc-6.2.0.tgz`))).toBe(false);
-		expect(existsSync(index("pacote:tarball:file:/home/alex/pi-harness-whatsapp-0.1.1.tgz"))).toBe(false);
-		expect(existsSync(content("franc metadata"))).toBe(false);
-		expect(existsSync(content("local copy"))).toBe(false);
+		assert.equal(await cleanNpmCache(join(root, "pi-harness-whatsapp"), async () => ({ code: 0, stdout: "", stderr: "" }), join(dir, "npm-cache")), 3);
+		assert.equal(existsSync(index(`${KEY}/franc`)), false);
+		assert.equal(existsSync(index(`${KEY}/franc/-/franc-6.2.0.tgz`)), false);
+		assert.equal(existsSync(index("pacote:tarball:file:/home/alex/pi-harness-whatsapp-0.1.1.tgz")), false);
+		assert.equal(existsSync(content("franc metadata")), false);
+		assert.equal(existsSync(content("local copy")), false);
 		// Still used by another entry.
-		expect(existsSync(content("shared bytes"))).toBe(true);
-		expect(existsSync(index(`${KEY}/other`))).toBe(true);
-		expect(existsSync(index(`${KEY}/old`))).toBe(true);
+		assert.equal(existsSync(content("shared bytes")), true);
+		assert.equal(existsSync(index(`${KEY}/other`)), true);
+		assert.equal(existsSync(index(`${KEY}/old`)), true);
 	});
 });
 
@@ -121,12 +122,12 @@ describe("setup.json", () => {
 			}),
 		);
 		const items = readSetupRecord(dir);
-		expect(items).toEqual([
+		assert.deepEqual(items, [
 			{ what: "ffmpeg", manager: "apt", packages: ["ffmpeg", "libavcodec61:amd64"], at: "2026-10-15", by: "Claude Code" },
 			{ what: "tmux", manager: "brew", packages: ["tmux"] },
 		]);
-		expect(manualCommand(items[0]!)).toBe("sudo apt-get remove --purge ffmpeg libavcodec61:amd64");
-		expect(readSetupRecord(join(dir, "missing"))).toEqual([]);
+		assert.equal(manualCommand(items[0]!), "sudo apt-get remove --purge ffmpeg libavcodec61:amd64");
+		assert.deepEqual(readSetupRecord(join(dir, "missing")), []);
 	});
 });
 
@@ -151,20 +152,20 @@ describe("removeItem (apt)", () => {
 
 	it("removes exactly the listed packages, with sudo when it needs no password", async () => {
 		const { runner, calls } = fakeApt({ dryRun: "Purg sl [5.02]\nPurg libfoo1:amd64 [1.0]\n", sudo: true });
-		expect(await removeItem(item, runner, false)).toEqual({ ok: true, message: "removed sl (2 packages)" });
-		expect(calls).toContain("sudo -n env DEBIAN_FRONTEND=noninteractive apt-get remove --purge -y sl libfoo1");
+		assert.deepEqual(await removeItem(item, runner, false), { ok: true, message: "removed sl (2 packages)" });
+		assert.ok(calls.includes("sudo -n env DEBIAN_FRONTEND=noninteractive apt-get remove --purge -y sl libfoo1"));
 	});
 
 	it("keeps everything when the removal would take other programs with it", async () => {
 		const { runner, calls } = fakeApt({ dryRun: "Purg sl [5.02]\nPurg libfoo1 [1.0]\nPurg vlc [3.0]\n" });
 		const result = await removeItem(item, runner, true);
-		expect(result).toMatchObject({ ok: false, message: "kept: removing it would also remove vlc, installed later" });
-		expect(calls.some((call) => call.includes(" -y "))).toBe(false);
+		assert.partialDeepStrictEqual(result, { ok: false, message: "kept: removing it would also remove vlc, installed later" });
+		assert.equal(calls.some((call) => call.includes(" -y ")), false);
 	});
 
 	it("gives the command when it would need a password", async () => {
 		const { runner } = fakeApt({ dryRun: "" });
-		expect(await removeItem(item, runner, false)).toEqual({
+		assert.deepEqual(await removeItem(item, runner, false), {
 			ok: false,
 			message: "needs your password",
 			command: "sudo apt-get remove --purge sl libfoo1",

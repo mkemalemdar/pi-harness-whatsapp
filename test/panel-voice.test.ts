@@ -1,7 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { MenuStack } from "../src/panel-components.ts";
 import type { SpeechInfo } from "../src/panel-model.ts";
 import { type PanelHost, type SubmenuContext, voiceNotesMenu } from "../src/panel.ts";
@@ -58,55 +59,55 @@ describe("Voice notes menu", () => {
 		setVoice(true, true);
 		open();
 		press(KEY.space, KEY.escape);
-		expect(question()).toBe("You set speech-to-text for removal. 828 MB will be freed.");
+		assert.equal(question(), "You set speech-to-text for removal. 828 MB will be freed.");
 		press(KEY.enter); // Yes
 		await Promise.resolve();
-		expect(settings.get().voice).toEqual({ understand: false, reply: true });
-		expect(removed).toEqual([["whisper-large-v3-turbo-int8-ov"]]);
+		assert.deepEqual(settings.get().voice, { understand: false, reply: true });
+		assert.deepEqual(removed, [["whisper-large-v3-turbo-int8-ov"]]);
 	});
 
 	it("puts the tick back when the removal is refused (No or Esc)", () => {
 		setVoice(true, true);
 		open();
 		press(KEY.space, KEY.escape, KEY.down, KEY.enter); // No
-		expect(settings.get().voice).toEqual({ understand: true, reply: true });
+		assert.deepEqual(settings.get().voice, { understand: true, reply: true });
 		open();
 		press(KEY.down, KEY.space, KEY.escape, KEY.escape); // Esc on the question
-		expect(settings.get().voice).toEqual({ understand: true, reply: true });
-		expect(removed).toEqual([]);
+		assert.deepEqual(settings.get().voice, { understand: true, reply: true });
+		assert.equal(removed.length, 0);
 	});
 
 	it("offers to download a newly ticked part: now, or when first needed", () => {
 		speech = { installed: new Set(), downloading: new Set(), sizesMB: {} };
 		open();
 		press(KEY.down, KEY.space, KEY.escape);
-		expect(question()).toBe("Reply with voice notes needs text-to-speech (~596 MB download).");
+		assert.equal(question(), "Reply with voice notes needs text-to-speech (~596 MB download).");
 		press(KEY.enter); // Now (recommended)
-		expect(downloads).toBe(1);
-		expect(settings.get().voice).toEqual({ understand: false, reply: true });
+		assert.equal(downloads, 1);
+		assert.deepEqual(settings.get().voice, { understand: false, reply: true });
 		open();
 		press(KEY.space, KEY.escape, KEY.escape); // understand too, then Esc = when first needed
-		expect(downloads).toBe(1);
-		expect(settings.get().voice).toEqual({ understand: true, reply: true });
+		assert.equal(downloads, 1);
+		assert.deepEqual(settings.get().voice, { understand: true, reply: true });
 	});
 
 	it("'Delete all speech files' unticks both and asks once", async () => {
 		setVoice(true, true);
 		open();
 		press(KEY.down, KEY.down, KEY.enter, KEY.escape);
-		expect(question()).toBe("You set speech-to-text and text-to-speech for removal. 1.4 GB will be freed.");
+		assert.equal(question(), "You set speech-to-text and text-to-speech for removal. 1.4 GB will be freed.");
 		press(KEY.enter);
 		await Promise.resolve();
-		expect(settings.get().voice).toEqual({ understand: false, reply: false });
-		expect(removed).toEqual([ALL]);
+		assert.deepEqual(settings.get().voice, { understand: false, reply: false });
+		assert.deepEqual(removed, [ALL]);
 	});
 
 	it("leaves quietly when nothing changed", () => {
 		setVoice(true, false);
 		open();
 		press(KEY.escape);
-		expect(question()).toBeUndefined();
-		expect(removed).toEqual([]);
-		expect(downloads).toBe(0);
+		assert.equal(question(), undefined);
+		assert.equal(removed.length, 0);
+		assert.equal(downloads, 0);
 	});
 });

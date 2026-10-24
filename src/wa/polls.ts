@@ -1,11 +1,9 @@
-/**
- * Menus as WhatsApp polls. Normal accounts can't send list or button
- * messages, but polls work everywhere: we keep each poll's secret, decrypt the
- * vote when you tap an option, and apply it right away. Replying with the
- * option's number works too.
- *
- * Only the newest menu of each kind in a chat is active.
- */
+// Menus as WhatsApp polls. Normal accounts can't send list or button
+// messages, but polls work everywhere: we keep each poll's secret, decrypt the
+// vote when you tap an option, and apply it right away. Replying with the
+// option's number works too.
+//
+// Only the newest menu of each kind in a chat is active.
 
 import { createHash, randomBytes } from "node:crypto";
 import { decryptPollVote, type proto } from "baileys";
@@ -103,11 +101,19 @@ function uniqueLabels(options: readonly MenuOption[]): MenuOption[] {
 export class PollMenus {
 	private readonly polls = new Map<string, ActivePoll>();
 
+	private readonly sender: PollSender;
+	private readonly selfJids: () => string[];
+	private readonly now: () => number;
+
 	constructor(
-		private readonly sender: PollSender,
-		private readonly selfJids: () => string[],
-		private readonly now: () => number = Date.now,
-	) {}
+		sender: PollSender,
+		selfJids: () => string[],
+		now: () => number = Date.now,
+	) {
+		this.sender = sender;
+		this.selfJids = selfJids;
+		this.now = now;
+	}
 
 	async show(chatJid: string, menu: Menu, page = 0): Promise<void> {
 		const { labels, values, pages } = paginate(menu.options, page);

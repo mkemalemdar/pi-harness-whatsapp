@@ -1,7 +1,5 @@
-/**
- * File logger with simple size-based rotation. Never logs message text or
- * credentials — only what happened, when, and with whom.
- */
+// File logger with simple size-based rotation. Never logs message text or
+// credentials — only what happened, when, and with whom.
 
 import { appendFileSync, existsSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { join } from "node:path";

@@ -2,7 +2,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { WAMessage } from "baileys";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { addressedToSelf, checkAccess, parseMessage, SeenIds } from "../src/wa/inbound.ts";
 import { ConnectionLock } from "../src/wa/lock.ts";
 import { backoffDelay, CODES, decideOnClose, MAX_DELAY_MS } from "../src/wa/reconnect.ts";
@@ -18,69 +19,69 @@ describe("ConnectionLock", () => {
 	it("lets one process hold it and reports the holder to others", () => {
 		const file = join(dir, "lock");
 		const mine = new ConnectionLock(file, process.pid);
-		expect(mine.acquire()).toEqual({ ok: true });
+		assert.deepEqual(mine.acquire(), { ok: true });
 		// Another live process (pid 1 always exists) trying to take it:
 		const other = new ConnectionLock(file, 1);
 		const result = other.acquire();
-		expect(result.ok).toBe(false);
-		if (!result.ok) expect(result.holder.pid).toBe(process.pid);
+		assert.equal(result.ok, false);
+		if (!result.ok) assert.equal(result.holder.pid, process.pid);
 		mine.release();
-		expect(other.acquire()).toEqual({ ok: true });
+		assert.deepEqual(other.acquire(), { ok: true });
 	});
 
 	it("takes over a lock left behind by a dead process", () => {
 		const file = join(dir, "lock");
 		writeFileSync(file, JSON.stringify({ pid: 2 ** 22 + 12345, host: hostname(), since: 1 }));
-		expect(new ConnectionLock(file).acquire()).toEqual({ ok: true });
+		assert.deepEqual(new ConnectionLock(file).acquire(), { ok: true });
 	});
 
-	it.runIf(process.platform === "linux")("takes over a lock whose pid now belongs to a newer process", () => {
+	it("takes over a lock whose pid now belongs to a newer process", { skip: process.platform !== "linux" && "needs Linux's /proc to read a process's start time" }, () => {
 		const file = join(dir, "lock");
 		// This test process started long after 1970, so it can't have written this lock.
 		const lock = { pid: process.pid, host: hostname(), since: 1000 };
 		writeFileSync(file, JSON.stringify(lock));
-		expect(new ConnectionLock(file, 2 ** 22 + 1).acquire()).toEqual({ ok: true });
+		assert.deepEqual(new ConnectionLock(file, 2 ** 22 + 1).acquire(), { ok: true });
 		// A lock written after the process started is respected.
 		writeFileSync(file, JSON.stringify({ ...lock, since: Date.now() }));
-		expect(new ConnectionLock(file, 2 ** 22 + 1).acquire().ok).toBe(false);
+		assert.equal(new ConnectionLock(file, 2 ** 22 + 1).acquire().ok, false);
 	});
 
 	it("respects a lock from another machine", () => {
 		const file = join(dir, "lock");
 		writeFileSync(file, JSON.stringify({ pid: 99999999, host: "other-box", since: 1 }));
-		expect(new ConnectionLock(file).acquire().ok).toBe(false);
+		assert.equal(new ConnectionLock(file).acquire().ok, false);
 	});
 });
 
 describe("decideOnClose", () => {
 	const fixed = () => 0.5;
 	it("reconnects right away when WhatsApp asks for a restart", () => {
-		expect(decideOnClose({ statusCode: CODES.restartRequired, attempt: 3, pairing: true })).toEqual({
+		assert.deepEqual(decideOnClose({ statusCode: CODES.restartRequired, attempt: 3, pairing: true }), {
 			action: "reconnect",
 			delayMs: 0,
 		});
 	});
 
 	it("asks for a new QR when logged out or the session is broken", () => {
-		expect(decideOnClose({ statusCode: CODES.loggedOut, attempt: 0, pairing: false }).action).toBe("repair");
-		expect(decideOnClose({ statusCode: CODES.badSession, attempt: 0, pairing: false }).action).toBe("reconnect");
+		assert.equal(decideOnClose({ statusCode: CODES.loggedOut, attempt: 0, pairing: false }).action, "repair");
+		assert.equal(decideOnClose({ statusCode: CODES.badSession, attempt: 0, pairing: false }).action, "reconnect");
 	});
 
 	it("stops when replaced, forbidden, or the QR expired", () => {
-		expect(decideOnClose({ statusCode: CODES.connectionReplaced, attempt: 0, pairing: false }).action).toBe("stop");
-		expect(decideOnClose({ statusCode: CODES.forbidden, attempt: 0, pairing: false }).action).toBe("stop");
-		expect(decideOnClose({ statusCode: CODES.connectionLost, attempt: 0, pairing: true }).action).toBe("stop");
+		assert.equal(decideOnClose({ statusCode: CODES.connectionReplaced, attempt: 0, pairing: false }).action, "stop");
+		assert.equal(decideOnClose({ statusCode: CODES.forbidden, attempt: 0, pairing: false }).action, "stop");
+		assert.equal(decideOnClose({ statusCode: CODES.connectionLost, attempt: 0, pairing: true }).action, "stop");
 	});
 
 	it("backs off exponentially with a cap", () => {
-		expect(decideOnClose({ statusCode: CODES.connectionLost, attempt: 0, pairing: false, random: fixed })).toEqual({
+		assert.deepEqual(decideOnClose({ statusCode: CODES.connectionLost, attempt: 0, pairing: false, random: fixed }), {
 			action: "reconnect",
 			delayMs: 5000,
 		});
-		expect(backoffDelay(2, fixed)).toBe(20_000);
-		expect(backoffDelay(20, fixed)).toBe(MAX_DELAY_MS);
-		expect(backoffDelay(0, () => 0)).toBe(4000);
-		expect(backoffDelay(0, () => 1)).toBe(6000);
+		assert.equal(backoffDelay(2, fixed), 20_000);
+		assert.equal(backoffDelay(20, fixed), MAX_DELAY_MS);
+		assert.equal(backoffDelay(0, () => 0), 4000);
+		assert.equal(backoffDelay(0, () => 1), 6000);
 	});
 });
 
@@ -95,7 +96,7 @@ const message = (overrides: Partial<WAMessage> & { message?: WAMessage["message"
 
 describe("parseMessage", () => {
 	it("reads plain and extended text", () => {
-		expect(parseMessage(message({}))).toMatchObject({ kind: "text", text: "hello", timestamp: 1_700_000_000_000 });
+		assert.partialDeepStrictEqual(parseMessage(message({})), { kind: "text", text: "hello", timestamp: 1_700_000_000_000 });
 		const quoted = parseMessage(
 			message({
 				message: {
@@ -103,23 +104,23 @@ describe("parseMessage", () => {
 				},
 			}),
 		);
-		expect(quoted).toMatchObject({ kind: "text", text: "yes", quotedText: "do it?" });
+		assert.partialDeepStrictEqual(quoted, { kind: "text", text: "yes", quotedText: "do it?" });
 	});
 
 	it("unwraps ephemeral messages and reads media", () => {
 		const image = parseMessage(
 			message({ message: { ephemeralMessage: { message: { imageMessage: { caption: "look", mimetype: "image/png" } } } } }),
 		);
-		expect(image).toMatchObject({ kind: "image", text: "look", mimeType: "image/png" });
+		assert.partialDeepStrictEqual(image, { kind: "image", text: "look", mimeType: "image/png" });
 		const audio = parseMessage(message({ message: { audioMessage: { seconds: 7, mimetype: "audio/ogg; codecs=opus" } } }));
-		expect(audio).toMatchObject({ kind: "audio", seconds: 7 });
+		assert.partialDeepStrictEqual(audio, { kind: "audio", seconds: 7 });
 	});
 
 	it("ignores reactions, protocol messages, status and missing ids", () => {
-		expect(parseMessage(message({ message: { reactionMessage: { text: "👍" } } }))).toBeUndefined();
-		expect(parseMessage(message({ message: { protocolMessage: {} } }))).toBeUndefined();
-		expect(parseMessage(message({ key: { id: "x", remoteJid: "status@broadcast" } }))).toBeUndefined();
-		expect(parseMessage(message({ key: { remoteJid: "905551234567@s.whatsapp.net" } }))).toBeUndefined();
+		assert.equal(parseMessage(message({ message: { reactionMessage: { text: "👍" } } })), undefined);
+		assert.equal(parseMessage(message({ message: { protocolMessage: {} } })), undefined);
+		assert.equal(parseMessage(message({ key: { id: "x", remoteJid: "status@broadcast" } })), undefined);
+		assert.equal(parseMessage(message({ key: { remoteJid: "905551234567@s.whatsapp.net" } })), undefined);
 	});
 
 	it("uses the participant as sender in groups", () => {
@@ -133,7 +134,7 @@ describe("parseMessage", () => {
 				},
 			}),
 		);
-		expect(parsed).toMatchObject({
+		assert.partialDeepStrictEqual(parsed, {
 			isGroup: true,
 			senderJid: "100000000000001@lid",
 			senderAltJid: "905551234567@s.whatsapp.net",
@@ -154,21 +155,19 @@ describe("checkAccess", () => {
 			[owner],
 			self,
 		);
-		expect(access).toMatchObject({ allowed: true, isOwner: true, learnedLid: { contactId: "905551234567", lid: "100000000000001" } });
+		assert.partialDeepStrictEqual(access, { allowed: true, isOwner: true, learnedLid: { contactId: "905551234567", lid: "100000000000001" } });
 	});
 
 	it("allows by a remembered LID without a phone number", () => {
 		const access = checkAccess(parse({ key: { id: "2", remoteJid: "111222333@lid" } }), [owner, friend], self);
-		expect(access).toMatchObject({ allowed: true, isOwner: false });
-		expect(access.learnedLid).toBeUndefined();
+		assert.partialDeepStrictEqual(access, { allowed: true, isOwner: false });
+		assert.equal(access.learnedLid, undefined);
 	});
 
 	it("refuses strangers and unknown groups", () => {
-		expect(checkAccess(parse({ key: { id: "3", remoteJid: "4477001122@s.whatsapp.net" } }), [owner], self).allowed).toBe(false);
-		expect(
-			checkAccess(parse({ key: { id: "4", remoteJid: "1203@g.us", participant: "905551234567@s.whatsapp.net" } }), [owner], self)
-				.allowed,
-		).toBe(false);
+		assert.equal(checkAccess(parse({ key: { id: "3", remoteJid: "4477001122@s.whatsapp.net" } }), [owner], self).allowed, false);
+		assert.equal(checkAccess(parse({ key: { id: "4", remoteJid: "1203@g.us", participant: "905551234567@s.whatsapp.net" } }), [owner], self)
+				.allowed, false);
 	});
 
 	it("allows any member of an allowed group, owner flag by sender", () => {
@@ -177,32 +176,30 @@ describe("checkAccess", () => {
 			[owner, group],
 			self,
 		);
-		expect(access).toMatchObject({ allowed: true, isOwner: true, contact: group });
+		assert.partialDeepStrictEqual(access, { allowed: true, isOwner: true, contact: group });
 		const other = checkAccess(parse({ key: { id: "6", remoteJid: group.id, participant: "1234567@s.whatsapp.net" } }), [owner, group], self);
-		expect(other).toMatchObject({ allowed: true, isOwner: false });
+		assert.partialDeepStrictEqual(other, { allowed: true, isOwner: false });
 	});
 
 	it("treats the 'message yourself' chat as the owner and ignores other own messages", () => {
-		expect(checkAccess(parse({ key: { id: "7", remoteJid: "905550000000@s.whatsapp.net", fromMe: true } }), [], self)).toMatchObject({
+		assert.partialDeepStrictEqual(checkAccess(parse({ key: { id: "7", remoteJid: "905550000000@s.whatsapp.net", fromMe: true } }), [], self), {
 			allowed: true,
 			isOwner: true,
 		});
-		expect(checkAccess(parse({ key: { id: "8", remoteJid: "999888777@lid", fromMe: true } }), [], self).allowed).toBe(true);
-		expect(checkAccess(parse({ key: { id: "9", remoteJid: "905551234567@s.whatsapp.net", fromMe: true } }), [owner], self).allowed).toBe(
-			false,
-		);
+		assert.equal(checkAccess(parse({ key: { id: "8", remoteJid: "999888777@lid", fromMe: true } }), [], self).allowed, true);
+		assert.equal(checkAccess(parse({ key: { id: "9", remoteJid: "905551234567@s.whatsapp.net", fromMe: true } }), [owner], self).allowed, false);
 	});
 });
 
 describe("SeenIds", () => {
 	it("reports duplicates and forgets the oldest", () => {
 		const seen = new SeenIds(2);
-		expect(seen.add("a")).toBe(true);
-		expect(seen.add("a")).toBe(false);
+		assert.equal(seen.add("a"), true);
+		assert.equal(seen.add("a"), false);
 		seen.add("b");
 		seen.add("c");
-		expect(seen.has("a")).toBe(false);
-		expect(seen.has("c")).toBe(true);
+		assert.equal(seen.has("a"), false);
+		assert.equal(seen.has("c"), true);
 	});
 });
 
@@ -212,39 +209,39 @@ describe("RecentsStore", () => {
 		const store = new RecentsStore(file);
 		store.see({ jid: "100000000000001@lid", name: "Alex", at: 2000 });
 		store.see({ jid: "4155551212@s.whatsapp.net", at: 1000 });
-		expect(store.list().map((chat) => chat.id)).toEqual(["100000000000001", "4155551212"]);
-		expect(store.list()[0]?.lid).toBe("100000000000001");
+		assert.deepEqual(store.list().map((chat) => chat.id), ["100000000000001", "4155551212"]);
+		assert.equal(store.list()[0]?.lid, "100000000000001");
 
 		store.rememberLid("100000000000001@lid", "905551234567@s.whatsapp.net");
-		expect(store.list()[0]).toMatchObject({ id: "905551234567", name: "Alex" });
-		expect(store.list()[0]?.lid).toBeUndefined();
+		assert.partialDeepStrictEqual(store.list()[0], { id: "905551234567", name: "Alex" });
+		assert.equal(store.list()[0]?.lid, undefined);
 		store.flush();
 
 		const reloaded = new RecentsStore(file);
 		reloaded.load();
-		expect(reloaded.list().map((chat) => chat.id)).toEqual(["905551234567", "4155551212"]);
-		expect(reloaded.phoneForLid("100000000000001")).toBe("905551234567");
+		assert.deepEqual(reloaded.list().map((chat) => chat.id), ["905551234567", "4155551212"]);
+		assert.equal(reloaded.phoneForLid("100000000000001"), "905551234567");
 	});
 
 	it("skips status and newsletters", () => {
 		const store = new RecentsStore(join(dir, "r.json"));
 		store.see({ jid: "status@broadcast", at: 1 });
 		store.see({ jid: "123@newsletter", at: 1 });
-		expect(store.list()).toEqual([]);
+		assert.equal(store.list().length, 0);
 	});
 });
 
 describe("isLoggedIn", () => {
 	it("counts a QR login (me set, registered false) as logged in", async () => {
 		const { isLoggedIn } = await import("../src/wa/connection.ts");
-		expect(isLoggedIn({ me: { id: "905550000000:12@s.whatsapp.net" } })).toBe(true);
-		expect(isLoggedIn({ me: undefined })).toBe(false);
-		expect(isLoggedIn(undefined)).toBe(false);
+		assert.equal(isLoggedIn({ me: { id: "905550000000:12@s.whatsapp.net" } }), true);
+		assert.equal(isLoggedIn({ me: undefined }), false);
+		assert.equal(isLoggedIn(undefined), false);
 	});
 
 	it("a normal drop after being connected reconnects instead of stopping", () => {
 		// What onClose now passes for a socket that was open: pairing = false.
-		expect(decideOnClose({ statusCode: CODES.connectionClosed, attempt: 0, pairing: false, random: () => 0.5 })).toEqual({
+		assert.deepEqual(decideOnClose({ statusCode: CODES.connectionClosed, attempt: 0, pairing: false, random: () => 0.5 }), {
 			action: "reconnect",
 			delayMs: 5000,
 		});
@@ -262,24 +259,24 @@ describe("group addressing", () => {
 
 	it("finds an @mention in an image caption, by phone or hidden id", () => {
 		const byPhone = parse({ imageMessage: { caption: "@Pi bu ne?" } }, { mentionedJid: ["905550000000@s.whatsapp.net"] });
-		expect(byPhone.kind).toBe("image");
-		expect(addressedToSelf(byPhone, self, () => false)).toEqual({ mentioned: true, repliedTo: false });
+		assert.equal(byPhone.kind, "image");
+		assert.deepEqual(addressedToSelf(byPhone, self, () => false), { mentioned: true, repliedTo: false });
 		const byLid = parse({ extendedTextMessage: { text: "@Pi?" } }, { mentionedJid: ["100000000000001@lid"] });
-		expect(addressedToSelf(byLid, self, () => false).mentioned).toBe(true);
+		assert.equal(addressedToSelf(byLid, self, () => false).mentioned, true);
 	});
 
 	it("knows a reply to Pi, by author or by a message id Pi sent", () => {
 		const byAuthor = parse({ extendedTextMessage: { text: "ok" } }, { stanzaId: "X", participant: "905550000000@s.whatsapp.net" });
-		expect(addressedToSelf(byAuthor, self, () => false).repliedTo).toBe(true);
+		assert.equal(addressedToSelf(byAuthor, self, () => false).repliedTo, true);
 		const byId = parse({ extendedTextMessage: { text: "ok" } }, { stanzaId: "SENT1", participant: "someone@lid" });
-		expect(addressedToSelf(byId, self, (id) => id === "SENT1").repliedTo).toBe(true);
+		assert.equal(addressedToSelf(byId, self, (id) => id === "SENT1").repliedTo, true);
 		const other = parse({ extendedTextMessage: { text: "ok" } }, { stanzaId: "Y", participant: "4477001122@s.whatsapp.net" });
-		expect(addressedToSelf(other, self, () => false)).toEqual({ mentioned: false, repliedTo: false });
+		assert.deepEqual(addressedToSelf(other, self, () => false), { mentioned: false, repliedTo: false });
 	});
 
 	it("keeps the replied-to image so it can be downloaded", () => {
 		const reply = parse({ extendedTextMessage: { text: "@Pi bu ne?" } }, { stanzaId: "IMG", participant: "4477001122@s.whatsapp.net", quotedMessage: { imageMessage: { mimetype: "image/png" } } });
-		expect(reply.quotedImage).toEqual({ mimetype: "image/png" });
-		expect(reply.quotedId).toBe("IMG");
+		assert.deepEqual(reply.quotedImage, { mimetype: "image/png" });
+		assert.equal(reply.quotedId, "IMG");
 	});
 });

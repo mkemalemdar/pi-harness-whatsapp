@@ -1,7 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { type PanelHost, showPanel } from "../src/panel.ts";
 import { SettingsStore } from "../src/settings.ts";
 
@@ -50,18 +51,18 @@ describe("the /whatsapp panel", () => {
 
 	it("shows VOICE greyed out while voice is off, and DANGER with the log file at the bottom", () => {
 		const text = screen(open());
-		expect(text).toMatch(/\[VOICE\][\s\S]*Voice notes\s+░off░[\s\S]*░\s*Reply type░\s+░text░[\s\S]*░\s*Voice per language░[\s\S]*░\s*Voice reply speed░/);
-		expect(text).toMatch(/\[DANGER\][\s\S]*Remove everything \(before uninstalling\)…[\s\S]*Log file: \/home\/alex/);
-		expect(text).not.toContain("TECHNICAL");
-		expect(text).not.toContain("Speech files");
+		assert.match(text, /\[VOICE\][\s\S]*Voice notes\s+░off░[\s\S]*░\s*Reply type░\s+░text░[\s\S]*░\s*Voice per language░[\s\S]*░\s*Voice reply speed░/);
+		assert.match(text, /\[DANGER\][\s\S]*Remove everything \(before uninstalling\)…[\s\S]*Log file: \/home\/alex/);
+		assert.ok(!text.includes("TECHNICAL"));
+		assert.ok(!text.includes("Speech files"));
 	});
 
 	it("explains a greyed-out row when it's selected", () => {
 		const panel = open();
 		for (let i = 0; i < 14; i++) panel.handleInput("\x1b[B"); // down to "Reply type"
-		expect(screen(panel)).toContain("Voice replies are off. Open “Voice notes” and tick “Reply with voice notes” to use this.");
+		assert.ok(screen(panel).includes("Voice replies are off. Open “Voice notes” and tick “Reply with voice notes” to use this."));
 		panel.handleInput("\r");
-		expect(screen(panel)).toContain("tick “Reply with voice notes” in Voice notes first");
+		assert.ok(screen(panel).includes("tick “Reply with voice notes” in Voice notes first"));
 	});
 
 	it("opens the Voice notes menu with both parts, their sizes and the delete button", () => {
@@ -69,8 +70,8 @@ describe("the /whatsapp panel", () => {
 		for (let i = 0; i < 13; i++) panel.handleInput("\x1b[B"); // down to "Voice notes"
 		panel.handleInput("\r");
 		const text = screen(panel);
-		expect(text).toMatch(/\[ \] Understand voice notes\s+░speech-to-text · 1\.0 GB░/);
-		expect(text).toMatch(/\[ \] Reply with voice notes\s+░text-to-speech · 603 MB░/);
-		expect(text).toMatch(/\n\s*\n\s+\[ Delete all speech files \]/);
+		assert.match(text, /\[ \] Understand voice notes\s+░speech-to-text · 1\.0 GB░/);
+		assert.match(text, /\[ \] Reply with voice notes\s+░text-to-speech · 603 MB░/);
+		assert.match(text, /\n\s*\n\s+\[ Delete all speech files \]/);
 	});
 });

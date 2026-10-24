@@ -1,9 +1,7 @@
-/**
- * Small helpers for WhatsApp ids ("JIDs"):
- *   person (phone):  905551234567@s.whatsapp.net   (may carry a device suffix, ":12")
- *   person (hidden): 100000000000001@lid
- *   group:           120363000000000001@g.us
- */
+// Small helpers for WhatsApp ids ("JIDs"):
+//   person (phone):  905551234567@s.whatsapp.net   (may carry a device suffix, ":12")
+//   person (hidden): 100000000000001@lid
+//   group:           120363000000000001@g.us
 
 export const isGroupJid = (jid: string | undefined | null): boolean => !!jid?.endsWith("@g.us");
 export const isLidJid = (jid: string | undefined | null): boolean => !!jid?.endsWith("@lid");

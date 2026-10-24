@@ -1,15 +1,13 @@
-/**
- * setup.json, in the data folder: programs installed on this computer just for
- * this extension (ffmpeg, tmux…), written by whoever set it up (see
- * AGENT_INSTALL.md). "Remove everything" offers to remove exactly those
- * packages again, and never anything installed later that needs them.
- *
- *   { "version": 1, "installed": [ { "what": "ffmpeg", "manager": "apt",
- *     "packages": ["ffmpeg", "libavcodec61", …], "at": "2026-10-15", "by": "Claude Code" } ] }
- *
- * Only known package managers and plain package names are accepted, so the
- * file can't be used to run other commands.
- */
+// setup.json, in the data folder: programs installed on this computer just for
+// this extension (ffmpeg, tmux…), written by whoever set it up (see
+// AGENT_INSTALL.md). "Remove everything" offers to remove exactly those
+// packages again, and never anything installed later that needs them.
+//
+//   { "version": 1, "installed": [ { "what": "ffmpeg", "manager": "apt",
+//     "packages": ["ffmpeg", "libavcodec61", …], "at": "2026-10-15", "by": "Claude Code" } ] }
+//
+// Only known package managers and plain package names are accepted, so the
+// file can't be used to run other commands.
 
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";

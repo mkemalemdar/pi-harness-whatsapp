@@ -1,11 +1,9 @@
-/**
- * Supertonic 3 text-to-speech on OpenVINO. Ported from Supertone's MIT-licensed
- * reference code (github.com/supertone-inc/supertonic, nodejs/helper.js), with
- * ONNX Runtime swapped for OpenVINO.
- *
- * Four models: duration predictor → text encoder → vector estimator (run
- * `steps` times, from noise to a speech latent) → vocoder (latent → audio).
- */
+// Supertonic 3 text-to-speech on OpenVINO. Ported from Supertone's MIT-licensed
+// reference code (github.com/supertone-inc/supertonic, nodejs/helper.js), with
+// ONNX Runtime swapped for OpenVINO.
+//
+// Four models: duration predictor → text encoder → vector estimator (run
+// `steps` times, from noise to a speech latent) → vocoder (latent → audio).
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -108,10 +106,16 @@ export interface OpenVino {
  * passed in the order the model declares them, looked up by name.
  */
 class Model {
+	private readonly inputNames: string[];
+	private readonly request: OvRequest;
+
 	constructor(
-		private readonly inputNames: string[],
-		private readonly request: OvRequest,
-	) {}
+		inputNames: string[],
+		request: OvRequest,
+	) {
+		this.inputNames = inputNames;
+		this.request = request;
+	}
 
 	run(inputs: Record<string, OvTensor>): Promise<Record<string, OvTensor>> {
 		return this.request.inferAsync(
@@ -132,13 +136,25 @@ interface Style {
 export class Supertonic {
 	private readonly styles = new Map<string, Style>();
 
+	private readonly ov: OpenVino;
+	private readonly dir: string;
+	private readonly config: { sampleRate: number; baseChunkSize: number; chunkCompress: number; latentDim: number };
+	private readonly indexer: number[];
+	private readonly models: { duration: Model; textEncoder: Model; vectorEstimator: Model; vocoder: Model };
+
 	private constructor(
-		private readonly ov: OpenVino,
-		private readonly dir: string,
-		private readonly config: { sampleRate: number; baseChunkSize: number; chunkCompress: number; latentDim: number },
-		private readonly indexer: number[],
-		private readonly models: { duration: Model; textEncoder: Model; vectorEstimator: Model; vocoder: Model },
-	) {}
+		ov: OpenVino,
+		dir: string,
+		config: { sampleRate: number; baseChunkSize: number; chunkCompress: number; latentDim: number },
+		indexer: number[],
+		models: { duration: Model; textEncoder: Model; vectorEstimator: Model; vocoder: Model },
+	) {
+		this.ov = ov;
+		this.dir = dir;
+		this.config = config;
+		this.indexer = indexer;
+		this.models = models;
+	}
 
 	static async load(ov: OpenVino, dir: string, device = "CPU"): Promise<Supertonic> {
 		const cfg = JSON.parse(readFileSync(join(dir, "onnx", "tts.json"), "utf8")) as {

@@ -1,17 +1,15 @@
-/**
- * Speech files: what exists, where it lives on disk, and downloading it.
- *
- * - Speech-to-text: Whisper large-v3-turbo (int8), exported for OpenVINO by Intel.
- * - Text-to-speech: Supertonic 3 (ONNX, 31 languages, 10 voices), run by OpenVINO.
- * - The OpenVINO engine itself: Intel's two Node packages and their native
- *   libraries. They are fetched here instead of through npm, because their npm
- *   install scripts download the libraries in a way that fails in some setups
- *   (e.g. as root in a container), which would break installing the extension.
- *
- * Everything is unpacked under ~/.pi/agent/pi-harness-whatsapp/models/<name>/.
- * Every download is pinned (Hugging Face commits, npm integrity hashes) or
- * checked against the publisher's checksum, so every install gets the tested files.
- */
+// Speech files: what exists, where it lives on disk, and downloading it.
+//
+// - Speech-to-text: Whisper large-v3-turbo (int8), exported for OpenVINO by Intel.
+// - Text-to-speech: Supertonic 3 (ONNX, 31 languages, 10 voices), run by OpenVINO.
+// - The OpenVINO engine itself: Intel's two Node packages and their native
+//   libraries. They are fetched here instead of through npm, because their npm
+//   install scripts download the libraries in a way that fails in some setups
+//   (e.g. as root in a container), which would break installing the extension.
+//
+// Everything is unpacked under ~/.pi/agent/pi-harness-whatsapp/models/<name>/.
+// Every download is pinned (Hugging Face commits, npm integrity hashes) or
+// checked against the publisher's checksum, so every install gets the tested files.
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -112,12 +110,20 @@ export class ModelStore {
 	/** One per running download, to cancel it. */
 	private readonly cancels = new Map<string, AbortController>();
 
+	private readonly root: string;
+	private readonly onProgress?: ProgressListener;
+	private readonly hfBase: string;
+
 	constructor(
-		private readonly root: string,
-		private readonly onProgress?: ProgressListener,
+		root: string,
+		onProgress?: ProgressListener,
 		/** Hugging Face's address (a local server in tests). */
-		private readonly hfBase = HF,
-	) {}
+		hfBase: string = HF,
+	) {
+		this.root = root;
+		this.onProgress = onProgress;
+		this.hfBase = hfBase;
+	}
 
 	dir(spec: ModelSpec): string {
 		return join(this.root, spec.name);

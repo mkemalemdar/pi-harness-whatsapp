@@ -1,7 +1,5 @@
-/**
- * What incoming media becomes for the model (images, voice notes, files),
- * and how replies go out (text, voice note, or both).
- */
+// What incoming media becomes for the model (images, voice notes, files),
+// and how replies go out (text, voice note, or both).
 
 import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, extname, join } from "node:path";
@@ -66,7 +64,11 @@ const EXT_BY_MIME: Record<string, string> = {
 };
 
 export class Media implements MediaHandler {
-	constructor(private readonly deps: MediaDeps) {}
+	private readonly deps: MediaDeps;
+
+	constructor(deps: MediaDeps) {
+		this.deps = deps;
+	}
 
 	async prepare(message: InboundMessage, makeHeader: (voiceTag?: string) => string): Promise<PreparedPrompt> {
 		const prepared = await this.prepareMessage(message, makeHeader);

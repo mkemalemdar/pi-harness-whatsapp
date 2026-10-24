@@ -2,15 +2,16 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { after, before, describe, it } from "node:test";
 
 const dir = join(mkdtempSync(join(tmpdir(), "phw-remove-")), "pi-harness-whatsapp");
 const previous = process.env.PI_HARNESS_WHATSAPP_DIR;
 
-beforeAll(() => {
+before(() => {
 	process.env.PI_HARNESS_WHATSAPP_DIR = dir;
 });
-afterAll(() => {
+after(() => {
 	process.env.PI_HARNESS_WHATSAPP_DIR = previous;
 	rmSync(join(dir, ".."), { recursive: true, force: true });
 });
@@ -40,11 +41,11 @@ describe("removeDataDir", () => {
 		const { removeDataDir } = await import("../src/paths.ts");
 		fillDataDir();
 		writeFileSync(join(dir, "someone-elses-notes.txt"), "keep me");
-		expect(removeDataDir(dir)).toEqual([join(dir, "someone-elses-notes.txt")]);
-		expect(readdirSync(dir)).toEqual(["someone-elses-notes.txt"]);
+		assert.deepEqual(removeDataDir(dir), [join(dir, "someone-elses-notes.txt")]);
+		assert.deepEqual(readdirSync(dir), ["someone-elses-notes.txt"]);
 		rmSync(join(dir, "someone-elses-notes.txt"));
-		expect(removeDataDir(dir)).toEqual([]);
-		expect(existsSync(dir)).toBe(false);
+		assert.deepEqual(removeDataDir(dir), []);
+		assert.equal(existsSync(dir), false);
 	});
 });
 
@@ -62,7 +63,7 @@ describe("a Pi that never turns WhatsApp on", () => {
 		const controller = new Controller(pi as never);
 		await controller.onSessionStart({ type: "session_start", reason: "startup" } as never, ctx as never);
 		await controller.onSessionShutdown();
-		expect(existsSync(dir)).toBe(false);
+		assert.equal(existsSync(dir), false);
 	});
 });
 
@@ -107,16 +108,16 @@ describe("Remove everything", () => {
 		};
 		controller.settings.load();
 		await controller.removeEverything(ctx as never);
-		expect(asked).toEqual(["Remove everything?", "Also remove ffmpeg?", "Also remove tmux?"]);
-		expect(cleaned).toEqual([join(import.meta.dirname, ".."), "ffmpeg"]);
-		expect(notices.at(-1)).toContain("✓ Removed 12 cached downloads from npm's cache.");
-		expect(notices.at(-1)).toContain("✓ Removed ffmpeg (2 packages).");
-		expect(notices.at(-1)).toContain("• Kept tmux.");
+		assert.deepEqual(asked, ["Remove everything?", "Also remove ffmpeg?", "Also remove tmux?"]);
+		assert.deepEqual(cleaned, [join(import.meta.dirname, ".."), "ffmpeg"]);
+		assert.ok(notices.at(-1)!.includes("✓ Removed 12 cached downloads from npm's cache."));
+		assert.ok(notices.at(-1)!.includes("✓ Removed ffmpeg (2 packages)."));
+		assert.ok(notices.at(-1)!.includes("• Kept tmux."));
 
-		expect(existsSync(dir)).toBe(false);
-		expect(notices.at(-1)).toContain("✓ No WhatsApp login was linked.");
-		expect(notices.at(-1)).toContain(`✓ Deleted ${dir}.`);
-		expect(notices.at(-1)).toContain("pi uninstall npm:pi-harness-whatsapp");
+		assert.equal(existsSync(dir), false);
+		assert.ok(notices.at(-1)!.includes("✓ No WhatsApp login was linked."));
+		assert.ok(notices.at(-1)!.includes(`✓ Deleted ${dir}.`));
+		assert.ok(notices.at(-1)!.includes("pi uninstall npm:pi-harness-whatsapp"));
 
 		// Everything that used to write stays quiet now.
 		controller.settings.update((draft) => {
@@ -125,10 +126,10 @@ describe("Remove everything", () => {
 		controller.recents.see({ jid: "905551234567@s.whatsapp.net", at: Date.now() });
 		controller.recents.flush();
 		createLogger("test").error("this must not be written");
-		await expect(controller.voice.models.ensure((await import("../src/voice/models.ts")).WHISPER_SPEC)).rejects.toThrow(/removed/);
+		await assert.rejects(controller.voice.models.ensure((await import("../src/voice/models.ts")).WHISPER_SPEC), /removed/);
 		await controller.onSessionStart({ type: "session_start", reason: "startup" } as never, ctx as never);
 		await controller.onSessionShutdown();
-		expect(existsSync(dir)).toBe(false);
-		expect(statuses.at(-1)).toMatch(/^WA: removed/);
+		assert.equal(existsSync(dir), false);
+		assert.match(statuses.at(-1) ?? "", /^WA: removed/);
 	});
 });

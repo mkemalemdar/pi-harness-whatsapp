@@ -1,8 +1,6 @@
-/**
- * Owns the extension's state for the current session: settings, the
- * per-session on/off state, the WhatsApp connection, the footer status and
- * the QR widget. index.ts only wires Pi events to this class.
- */
+// Owns the extension's state for the current session: settings, the
+// per-session on/off state, the WhatsApp connection, the footer status and
+// the QR widget. src/index.ts only wires Pi events to this class.
 
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import qrcode from "qrcode-terminal";
@@ -76,7 +74,10 @@ export class Controller implements PanelHost, CommandEnv {
 	private ctx: ExtensionContext | undefined;
 	private lastState: ConnectionState["kind"] = "stopped";
 
-	constructor(readonly pi: ExtensionAPI) {
+	readonly pi: ExtensionAPI;
+
+	constructor(pi: ExtensionAPI) {
+		this.pi = pi;
 		this.connection = new WhatsAppConnection(paths.auth(), paths.lock(), {
 			onState: (state) => this.onConnectionState(state),
 			onMessages: (messages, type) => void this.bridge.handleUpsert(messages, type),
@@ -458,7 +459,7 @@ export class Controller implements PanelHost, CommandEnv {
 		this.onToolsChanged?.(on);
 	}
 
-	/** Set by index.ts: hides or shows the WhatsApp tools. */
+	/** Set by src/index.ts: hides or shows the WhatsApp tools. */
 	onToolsChanged: ((on: boolean) => void) | undefined;
 
 	private onConnectionState(state: ConnectionState): void {

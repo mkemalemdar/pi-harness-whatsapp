@@ -1,7 +1,5 @@
-/**
- * What to do when the WhatsApp socket closes. Pure so it can be tested.
- * Status codes are Baileys' DisconnectReason values.
- */
+// What to do when the WhatsApp socket closes. Pure so it can be tested.
+// Status codes are Baileys' DisconnectReason values.
 
 export const CODES = {
 	connectionClosed: 428,

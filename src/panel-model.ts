@@ -1,7 +1,5 @@
-/**
- * What the /whatsapp panel shows: sections, rows, the choices behind each
- * row, and every description. Free of TUI code so it can be unit-tested.
- */
+// What the /whatsapp panel shows: sections, rows, the choices behind each
+// row, and every description. Free of TUI code so it can be unit-tested.
 
 import { getLanguage, LANGUAGES, languageLabel } from "./languages.ts";
 import { KNOWN_SPECS, type ModelSpec, PART_SPECS } from "./voice/models.ts";

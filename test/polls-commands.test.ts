@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { aesEncryptGCM, hmacSign, proto } from "baileys";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { formatCompaction, formatTokens } from "../src/commands/session.ts";
 import { CommandRouter, parseCommand } from "../src/commands/router.ts";
 import type { CommandEnv } from "../src/commands/types.ts";
@@ -91,19 +92,19 @@ const colorMenu = (picked: string[][]): Menu => ({
 describe("paginate", () => {
 	it("keeps small menus on one page", () => {
 		const { labels, pages } = paginate([{ label: "a", value: "1" }], 0);
-		expect(labels).toEqual(["a"]);
-		expect(pages).toBe(1);
+		assert.deepEqual(labels, ["a"]);
+		assert.equal(pages, 1);
 	});
 
 	it("pages long menus with More and First entries and unique labels", () => {
 		const options = Array.from({ length: 25 }, (_, index) => ({ label: index === 3 ? "x0" : `x${index}`, value: String(index) }));
 		const first = paginate(options, 0);
-		expect(first.labels).toHaveLength(MAX_POLL_OPTIONS);
-		expect(first.labels.at(-1)).toBe("More ▸");
-		expect(first.labels).toContain("x0 (2)");
+		assert.equal(first.labels.length, MAX_POLL_OPTIONS);
+		assert.equal(first.labels.at(-1), "More ▸");
+		assert.ok(first.labels.includes("x0 (2)"));
 		const last = paginate(options, 2);
-		expect(last.labels.at(-1)).toBe("◂ First page");
-		expect(last.pages).toBe(3);
+		assert.equal(last.labels.at(-1), "◂ First page");
+		assert.equal(last.pages, 3);
 	});
 });
 
@@ -113,8 +114,8 @@ describe("PollMenus", () => {
 		const picked: string[][] = [];
 		await h.menus.show(CHAT, colorMenu(picked));
 		await h.menus.handleVote(h.vote(0, ["Green"]), true);
-		expect(picked).toEqual([["green"]]);
-		expect(h.texts).toEqual(["chose green"]);
+		assert.deepEqual(picked, [["green"]]);
+		assert.deepEqual(h.texts, ["chose green"]);
 	});
 
 	it("works when WhatsApp addresses the poll by LID", async () => {
@@ -122,7 +123,7 @@ describe("PollMenus", () => {
 		const picked: string[][] = [];
 		await h.menus.show(CHAT, colorMenu(picked));
 		await h.menus.handleVote(h.vote(0, ["Red"], CHAT, "999888777@lid"), true);
-		expect(picked).toEqual([["red"]]);
+		assert.deepEqual(picked, [["red"]]);
 	});
 
 	it("applies a changed vote and ignores an unchanged one", async () => {
@@ -132,7 +133,7 @@ describe("PollMenus", () => {
 		await h.menus.handleVote(h.vote(0, ["Red"]), true);
 		await h.menus.handleVote(h.vote(0, ["Red"]), true);
 		await h.menus.handleVote(h.vote(0, ["Green"]), true);
-		expect(picked).toEqual([["red"], ["green"]]);
+		assert.deepEqual(picked, [["red"], ["green"]]);
 	});
 
 	it("only the newest menu of a kind reacts", async () => {
@@ -141,24 +142,24 @@ describe("PollMenus", () => {
 		await h.menus.show(CHAT, colorMenu(picked));
 		await h.menus.show(CHAT, colorMenu(picked));
 		await h.menus.handleVote(h.vote(0, ["Red"]), true);
-		expect(picked).toEqual([]);
+		assert.equal(picked.length, 0);
 		await h.menus.handleVote(h.vote(1, ["Red"]), true);
-		expect(picked).toEqual([["red"]]);
+		assert.deepEqual(picked, [["red"]]);
 	});
 
 	it("accepts number replies and checks permission on gated menus", async () => {
 		const h = new PollHarness();
 		const picked: string[][] = [];
 		await h.menus.show(CHAT, { ...colorMenu(picked), gated: true });
-		expect(await h.menus.handleNumberReply(h.text("2"), false)).toBe(true);
-		expect(h.texts.at(-1)).toMatch(/Only the owner/);
-		expect(await h.menus.handleNumberReply(h.text("9"), true)).toBe(true);
-		expect(h.texts.at(-1)).toBe("Pick a number from 1 to 2.");
-		expect(await h.menus.handleNumberReply(h.text("hello"), true)).toBe(false);
-		expect(await h.menus.handleNumberReply(h.text("2"), true)).toBe(true);
-		expect(picked).toEqual([["green"]]);
+		assert.equal(await h.menus.handleNumberReply(h.text("2"), false), true);
+		assert.match(h.texts.at(-1) ?? "", /Only the owner/);
+		assert.equal(await h.menus.handleNumberReply(h.text("9"), true), true);
+		assert.equal(h.texts.at(-1), "Pick a number from 1 to 2.");
+		assert.equal(await h.menus.handleNumberReply(h.text("hello"), true), false);
+		assert.equal(await h.menus.handleNumberReply(h.text("2"), true), true);
+		assert.deepEqual(picked, [["green"]]);
 		// Answered: the next bare number is for Pi.
-		expect(await h.menus.handleNumberReply(h.text("1"), true)).toBe(false);
+		assert.equal(await h.menus.handleNumberReply(h.text("1"), true), false);
 	});
 
 	it("in a group, takes a number only as a reply to the menu", async () => {
@@ -166,17 +167,17 @@ describe("PollMenus", () => {
 		const picked: string[][] = [];
 		await h.menus.show(CHAT, colorMenu(picked));
 		const inGroup = (quotedId?: string) => ({ ...h.text("1"), isGroup: true, ...(quotedId ? { quotedId } : {}) });
-		expect(await h.menus.handleNumberReply(inGroup(), true)).toBe(false);
-		expect(await h.menus.handleNumberReply(inGroup("other"), true)).toBe(false);
-		expect(await h.menus.handleNumberReply(inGroup(h.sentPolls[0]!.id), true)).toBe(true);
-		expect(picked).toEqual([["red"]]);
+		assert.equal(await h.menus.handleNumberReply(inGroup(), true), false);
+		assert.equal(await h.menus.handleNumberReply(inGroup("other"), true), false);
+		assert.equal(await h.menus.handleNumberReply(inGroup(h.sentPolls[0]!.id), true), true);
+		assert.deepEqual(picked, [["red"]]);
 	});
 
 	it("stops taking number replies once the chat talks to Pi", async () => {
 		const h = new PollHarness();
 		await h.menus.show(CHAT, colorMenu([]));
 		h.menus.endNumberReplies(CHAT);
-		expect(await h.menus.handleNumberReply(h.text("2"), true)).toBe(false);
+		assert.equal(await h.menus.handleNumberReply(h.text("2"), true), false);
 	});
 
 	it("reports ticks and unticks for multi-choice menus", async () => {
@@ -195,11 +196,11 @@ describe("PollMenus", () => {
 				return undefined;
 			},
 		});
-		expect(h.sentPolls[0]?.selectableCount).toBe(2);
+		assert.equal(h.sentPolls[0]?.selectableCount, 2);
 		await h.menus.handleVote(h.vote(0, ["A"]), true);
 		await h.menus.handleVote(h.vote(0, ["A", "B"]), true);
 		await h.menus.handleVote(h.vote(0, ["B"]), true);
-		expect(seen).toEqual([
+		assert.deepEqual(seen, [
 			{ added: ["a"], removed: [] },
 			{ added: ["b"], removed: [] },
 			{ added: [], removed: ["a"] },
@@ -211,8 +212,8 @@ describe("PollMenus", () => {
 		const options = Array.from({ length: 15 }, (_, index) => ({ label: `m${index}`, value: String(index) }));
 		await h.menus.show(CHAT, { kind: "big", title: "Big", options, onPick: async () => undefined });
 		await h.menus.handleVote(h.vote(0, ["More ▸"]), true);
-		expect(h.sentPolls[1]?.name).toMatch(/\(2\/2\)/);
-		expect(h.sentPolls[1]?.values).toContain("m14");
+		assert.match(h.sentPolls[1]?.name, /\(2\/2\)/);
+		assert.ok(h.sentPolls[1]?.values.includes("m14"));
 	});
 });
 
@@ -224,29 +225,27 @@ describe("detectService", () => {
 			seen.push(`${scope.join("")}:${name}`);
 			return scope.length === 0;
 		};
-		expect(detectService({ PI_HARNESS_WHATSAPP_SERVICE: "pi-whatsapp" }, active)).toEqual({ name: "pi-whatsapp", scope: [] });
-		expect(seen).toEqual(["--user:pi-whatsapp", ":pi-whatsapp"]);
-		expect(detectService({}, active)).toBeUndefined();
-		expect(detectService({ PI_HARNESS_WHATSAPP_SERVICE: "x; rm -rf /" }, active)).toBeUndefined();
-		expect(detectService({ PI_HARNESS_WHATSAPP_SERVICE: "pi-whatsapp" }, () => false)).toBeUndefined();
+		assert.deepEqual(detectService({ PI_HARNESS_WHATSAPP_SERVICE: "pi-whatsapp" }, active), { name: "pi-whatsapp", scope: [] });
+		assert.deepEqual(seen, ["--user:pi-whatsapp", ":pi-whatsapp"]);
+		assert.equal(detectService({}, active), undefined);
+		assert.equal(detectService({ PI_HARNESS_WHATSAPP_SERVICE: "x; rm -rf /" }, active), undefined);
+		assert.equal(detectService({ PI_HARNESS_WHATSAPP_SERVICE: "pi-whatsapp" }, () => false), undefined);
 	});
 });
 
 describe("command helpers", () => {
 	it("parses commands", () => {
-		expect(parseCommand("/Model  example")).toEqual({ name: "model", args: "example" });
-		expect(parseCommand("/help")).toEqual({ name: "help", args: "" });
-		expect(parseCommand("hello /help")).toBeUndefined();
-		expect(parseCommand("/")).toBeUndefined();
+		assert.deepEqual(parseCommand("/Model  example"), { name: "model", args: "example" });
+		assert.deepEqual(parseCommand("/help"), { name: "help", args: "" });
+		assert.equal(parseCommand("hello /help"), undefined);
+		assert.equal(parseCommand("/"), undefined);
 	});
 
 	it("formats compaction results", () => {
-		expect(formatTokens(142_300)).toBe("142k");
-		expect(formatTokens(2_500)).toBe("2.5k");
-		expect(formatCompaction({ tokensBefore: 142_000, estimatedTokensAfter: 23_000 }, 18_000, 200_000)).toBe(
-			"✅ Compacted in 18s · 142k → 23k tokens (−84%) · context 89% free",
-		);
-		expect(formatCompaction({ tokensBefore: 5000 }, 1000)).toBe("✅ Compacted in 1s · 5.0k tokens before");
+		assert.equal(formatTokens(142_300), "142k");
+		assert.equal(formatTokens(2_500), "2.5k");
+		assert.equal(formatCompaction({ tokensBefore: 142_000, estimatedTokensAfter: 23_000 }, 18_000, 200_000), "✅ Compacted in 18s · 142k → 23k tokens (−84%) · context 89% free");
+		assert.equal(formatCompaction({ tokensBefore: 5000 }, 1000), "✅ Compacted in 1s · 5.0k tokens before");
 	});
 });
 
@@ -328,38 +327,38 @@ describe("CommandRouter", () => {
 	const guest = { allowed: true, isOwner: false };
 
 	it("does not treat normal text as a command", async () => {
-		expect(await new CommandRouter(env).handle(msg("hello"), owner)).toBe(false);
+		assert.equal(await new CommandRouter(env).handle(msg("hello"), owner), false);
 	});
 
 	it("answers /help and /status for anyone", async () => {
 		const router = new CommandRouter(env);
-		expect(await router.handle(msg("/help"), guest)).toBe(true);
-		expect(sent[0]).toContain("example/example-model");
-		expect(sent[0]).toContain("/compact");
+		assert.equal(await router.handle(msg("/help"), guest), true);
+		assert.ok(sent[0].includes("example/example-model"));
+		assert.ok(sent[0].includes("/compact"));
 		await router.handle(msg("/status"), guest);
-		expect(sent[1]).toContain("WhatsApp: connected");
+		assert.ok(sent[1].includes("WhatsApp: connected"));
 	});
 
 	it("blocks settings commands for non-owners unless access is open", async () => {
 		const router = new CommandRouter(env);
 		await router.handle(msg("/voice off"), guest);
-		expect(sent.at(-1)).toMatch(/Only the owner/);
-		expect(env.settings.get().voiceMode).toBe("mirror");
+		assert.match(sent.at(-1) ?? "", /Only the owner/);
+		assert.equal(env.settings.get().voiceMode, "mirror");
 		env.settings.update((draft) => {
 			draft.commandAccess = "allowed";
 		});
 		await router.handle(msg("/voice off"), guest);
-		expect(env.settings.get().voiceMode).toBe("off");
+		assert.equal(env.settings.get().voiceMode, "off");
 	});
 
 	it("sets values directly from arguments", async () => {
 		const router = new CommandRouter(env);
 		await router.handle(msg("/speed 1,3"), owner);
-		expect(env.settings.get().voiceSpeed).toBe(1.3);
+		assert.equal(env.settings.get().voiceSpeed, 1.3);
 		await router.handle(msg("/autocompact off"), owner);
-		expect(autoCompact).toBe(false);
+		assert.equal(autoCompact, false);
 		await router.handle(msg("/think max"), owner);
-		expect(sent.at(-1)).toBe("✅ Thinking → high (closest this model supports)");
+		assert.equal(sent.at(-1), "✅ Thinking → high (closest this model supports)");
 	});
 
 	it("won't change voice from WhatsApp while voice replies are off", async () => {
@@ -368,25 +367,25 @@ describe("CommandRouter", () => {
 			draft.voice = { understand: false, reply: false };
 		});
 		await router.handle(msg("/voice voice"), owner);
-		expect(sent.at(-1)).toMatch(/^Voice replies are off\. Turn them on in the terminal/);
+		assert.match(sent.at(-1) ?? "", /^Voice replies are off\. Turn them on in the terminal/);
 		await router.handle(msg("/speed 1.2"), owner);
-		expect(sent.at(-1)).toMatch(/^Voice replies are off/);
-		expect(env.settings.get()).toMatchObject({ voiceMode: "mirror", voiceSpeed: 1 });
+		assert.match(sent.at(-1) ?? "", /^Voice replies are off/);
+		assert.partialDeepStrictEqual(env.settings.get(), { voiceMode: "mirror", voiceSpeed: 1 });
 		env.settings.update((draft) => {
 			draft.voice = { understand: false, reply: true };
 		});
 		await router.handle(msg("/help"), owner);
-		expect(sent.at(-1)).toContain("Voice notes: understand ✗ · reply ✓");
+		assert.ok(sent.at(-1)!.includes("Voice notes: understand ✗ · reply ✓"));
 	});
 
 	it("replies to unknown commands and refuses /restart outside the loop", async () => {
 		const router = new CommandRouter(env);
 		await router.handle(msg("/frobnicate"), owner);
-		expect(sent.at(-1)).toMatch(/Unknown command \/frobnicate/);
+		assert.match(sent.at(-1) ?? "", /Unknown command \/frobnicate/);
 		await router.handle(msg("/restart"), owner);
-		expect(sent.at(-1)).toMatch(/systemd service/);
-		expect(enabled).toBe(true);
+		assert.match(sent.at(-1) ?? "", /systemd service/);
+		assert.equal(enabled, true);
 		await router.handle(msg("/new"), owner);
-		expect(newSessions).toBe(1);
+		assert.equal(newSessions, 1);
 	});
 });

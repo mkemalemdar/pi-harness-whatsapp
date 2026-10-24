@@ -1,4 +1,4 @@
-/** /new, /off, /quit, /restart — the last three ask for confirmation first. */
+// /new, /off, /quit, /restart — the last three ask for confirmation first.
 
 import { spawn, spawnSync } from "node:child_process";
 import { createLogger } from "../log.ts";

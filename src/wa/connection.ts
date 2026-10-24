@@ -1,8 +1,6 @@
-/**
- * The WhatsApp connection: one Baileys socket with saved login, QR pairing,
- * automatic reconnects and a single-instance lock. This is the only file that
- * talks to Baileys' socket directly, so a Baileys upgrade stays contained.
- */
+// The WhatsApp connection: one Baileys socket with saved login, QR pairing,
+// automatic reconnects and a single-instance lock. This is the only file that
+// talks to Baileys' socket directly, so a Baileys upgrade stays contained.
 
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -99,11 +97,16 @@ export class WhatsAppConnection {
 	/** Group names already asked from WhatsApp. */
 	private readonly groupNames = new Map<string, string>();
 
+	private readonly authDir: string;
+	private readonly events: ConnectionEvents;
+
 	constructor(
-		private readonly authDir: string,
+		authDir: string,
 		lockFile: string,
-		private readonly events: ConnectionEvents,
+		events: ConnectionEvents,
 	) {
+		this.authDir = authDir;
+		this.events = events;
 		this.lock = new ConnectionLock(lockFile);
 	}
 

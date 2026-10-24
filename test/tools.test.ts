@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import { mimeFor, resolveRecipient, setToolsActive, TOOL_NAMES } from "../src/tools.ts";
 
 const controllerWith = (contacts: unknown[], activeChat?: string) =>
@@ -15,16 +16,16 @@ describe("resolveRecipient", () => {
 	];
 
 	it("uses the chat Pi is answering, else the owner", () => {
-		expect(resolveRecipient(controllerWith(contacts, "x@s.whatsapp.net"), undefined)).toBe("x@s.whatsapp.net");
-		expect(resolveRecipient(controllerWith(contacts), undefined)).toBe("905551234567@s.whatsapp.net");
+		assert.equal(resolveRecipient(controllerWith(contacts, "x@s.whatsapp.net"), undefined), "x@s.whatsapp.net");
+		assert.equal(resolveRecipient(controllerWith(contacts), undefined), "905551234567@s.whatsapp.net");
 	});
 
 	it("finds allowed contacts by name or number and refuses others", () => {
-		expect(resolveRecipient(controllerWith(contacts), "team")).toBe("120363000000000001@g.us");
-		expect(resolveRecipient(controllerWith(contacts), "+905551234567")).toBe("905551234567@s.whatsapp.net");
-		expect(resolveRecipient(controllerWith(contacts), "Hidden")).toBe("100000000000001@lid");
-		expect(() => resolveRecipient(controllerWith(contacts), "+4477001122")).toThrow(/not an allowed/);
-		expect(() => resolveRecipient(controllerWith([]), undefined)).toThrow(/nobody is allowed/);
+		assert.equal(resolveRecipient(controllerWith(contacts), "team"), "120363000000000001@g.us");
+		assert.equal(resolveRecipient(controllerWith(contacts), "+905551234567"), "905551234567@s.whatsapp.net");
+		assert.equal(resolveRecipient(controllerWith(contacts), "Hidden"), "100000000000001@lid");
+		assert.throws(() => resolveRecipient(controllerWith(contacts), "+4477001122"), /not an allowed/);
+		assert.throws(() => resolveRecipient(controllerWith([]), undefined), /nobody is allowed/);
 	});
 });
 
@@ -33,16 +34,16 @@ describe("tool visibility", () => {
 		let active = ["read", "bash"];
 		const pi = { getActiveTools: () => active, setActiveTools: (names: string[]) => (active = names) };
 		setToolsActive(pi, true);
-		expect(active).toEqual(["read", "bash", ...TOOL_NAMES]);
+		assert.deepEqual(active, ["read", "bash", ...TOOL_NAMES]);
 		setToolsActive(pi, true);
-		expect(active).toHaveLength(2 + TOOL_NAMES.length);
+		assert.equal(active.length, 2 + TOOL_NAMES.length);
 		setToolsActive(pi, false);
-		expect(active).toEqual(["read", "bash"]);
+		assert.deepEqual(active, ["read", "bash"]);
 	});
 
 	it("knows common file types", () => {
-		expect(mimeFor("shot.PNG")).toBe("image/png");
-		expect(mimeFor("report.pdf")).toBe("application/pdf");
-		expect(mimeFor("blob")).toBe("application/octet-stream");
+		assert.equal(mimeFor("shot.PNG"), "image/png");
+		assert.equal(mimeFor("report.pdf"), "application/pdf");
+		assert.equal(mimeFor("blob"), "application/octet-stream");
 	});
 });

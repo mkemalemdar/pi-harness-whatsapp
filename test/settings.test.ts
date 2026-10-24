@@ -1,7 +1,8 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import {
 	addLanguage,
 	clampSpeed,
@@ -18,9 +19,9 @@ import {
 
 describe("normalizeSettings", () => {
 	it("returns defaults for garbage", () => {
-		expect(normalizeSettings(null)).toEqual(defaultSettings());
-		expect(normalizeSettings("x")).toEqual(defaultSettings());
-		expect(normalizeSettings([1, 2])).toEqual(defaultSettings());
+		assert.deepEqual(normalizeSettings(null), defaultSettings());
+		assert.deepEqual(normalizeSettings("x"), defaultSettings());
+		assert.deepEqual(normalizeSettings([1, 2]), defaultSettings());
 	});
 
 	it("keeps valid values and repairs invalid ones", () => {
@@ -33,16 +34,16 @@ describe("normalizeSettings", () => {
 			replyLanguage: "de",
 			replies: { summary: true, interim: "yes" },
 		});
-		expect(settings.voiceMode).toBe("voice+text");
-		expect(settings.voiceSpeed).toBe(2);
-		expect(settings.languages).toEqual(["tr", "en"]);
-		expect(settings.voices).toEqual({ tr: "M2", en: "F1" });
-		expect(settings.replyLanguage).toBe(MIRROR);
-		expect(settings.replies).toEqual({ summary: true, interim: false, touchedFiles: false, toolActivity: false, terminal: false });
+		assert.equal(settings.voiceMode, "voice+text");
+		assert.equal(settings.voiceSpeed, 2);
+		assert.deepEqual(settings.languages, ["tr", "en"]);
+		assert.deepEqual(settings.voices, { tr: "M2", en: "F1" });
+		assert.equal(settings.replyLanguage, MIRROR);
+		assert.deepEqual(settings.replies, { summary: true, interim: false, touchedFiles: false, toolActivity: false, terminal: false });
 	});
 
 	it("falls back to English when no language is valid", () => {
-		expect(normalizeSettings({ languages: ["xx"] }).languages).toEqual(["en"]);
+		assert.deepEqual(normalizeSettings({ languages: ["xx"] }).languages, ["en"]);
 	});
 
 	it("drops broken and duplicate contacts", () => {
@@ -55,7 +56,7 @@ describe("normalizeSettings", () => {
 				{ nope: true },
 			],
 		});
-		expect(settings.contacts).toEqual([
+		assert.deepEqual(settings.contacts, [
 			{ id: "905551234567", name: "Alex", owner: true },
 			{ id: "120363000000000001@g.us", name: "Team" },
 		]);
@@ -64,24 +65,24 @@ describe("normalizeSettings", () => {
 
 describe("voice switches", () => {
 	it("are off by default, and only true when set to true", () => {
-		expect(defaultSettings().voice).toEqual({ understand: false, reply: false });
-		expect(normalizeSettings({ voice: { understand: true, reply: "yes" } }).voice).toEqual({ understand: true, reply: false });
+		assert.deepEqual(defaultSettings().voice, { understand: false, reply: false });
+		assert.deepEqual(normalizeSettings({ voice: { understand: true, reply: "yes" } }).voice, { understand: true, reply: false });
 	});
 
 	it("make replies text while voice replies are off", () => {
 		const settings = defaultSettings();
 		settings.voiceMode = "voice";
-		expect(replyMode(settings)).toBe("off");
+		assert.equal(replyMode(settings), "off");
 		settings.voice.reply = true;
-		expect(replyMode(settings)).toBe("voice");
+		assert.equal(replyMode(settings), "voice");
 		// Mirror me stays mirror me: typed messages get text, even when Pi can't listen.
 		settings.voiceMode = "mirror";
-		expect(replyMode(settings)).toBe("mirror");
+		assert.equal(replyMode(settings), "mirror");
 	});
 });
 
 describe("normalizeContactId", () => {
-	it.each([
+	for (const [input, expected] of [
 		["+90 555 123 45 67", "905551234567"],
 		["905551234567@s.whatsapp.net", "905551234567"],
 		["905551234567:12@s.whatsapp.net", "905551234567"],
@@ -89,9 +90,11 @@ describe("normalizeContactId", () => {
 		["120363000000000001@g.us", "120363000000000001@g.us"],
 		["12", undefined],
 		["hello", undefined],
-	])("%s → %s", (input, expected) => {
-		expect(normalizeContactId(input)).toBe(expected);
-	});
+	] as const) {
+		it(`${input} → ${expected}`, () => {
+			assert.equal(normalizeContactId(input), expected);
+		});
+	}
 });
 
 describe("languages", () => {
@@ -100,23 +103,23 @@ describe("languages", () => {
 		addLanguage(settings, "tr");
 		addLanguage(settings, "tr");
 		addLanguage(settings, "xx");
-		expect(settings.languages).toEqual(["en", "tr"]);
-		expect(settings.voices.tr).toBe("F1");
+		assert.deepEqual(settings.languages, ["en", "tr"]);
+		assert.equal(settings.voices.tr, "F1");
 
 		settings.replyLanguage = "tr";
-		expect(removeLanguage(settings, "tr")).toBe(true);
-		expect(settings.replyLanguage).toBe(MIRROR);
-		expect(settings.voices.tr).toBeUndefined();
-		expect(removeLanguage(settings, "en")).toBe(false);
-		expect(settings.languages).toEqual(["en"]);
+		assert.equal(removeLanguage(settings, "tr"), true);
+		assert.equal(settings.replyLanguage, MIRROR);
+		assert.equal(settings.voices.tr, undefined);
+		assert.equal(removeLanguage(settings, "en"), false);
+		assert.deepEqual(settings.languages, ["en"]);
 	});
 });
 
 describe("clampSpeed", () => {
 	it("clamps and rounds", () => {
-		expect(clampSpeed(0.1)).toBe(0.5);
-		expect(clampSpeed(1.234)).toBe(1.23);
-		expect(clampSpeed(Number.NaN)).toBe(1);
+		assert.equal(clampSpeed(0.1), 0.5);
+		assert.equal(clampSpeed(1.234), 1.23);
+		assert.equal(clampSpeed(Number.NaN), 1);
 	});
 });
 
@@ -130,14 +133,14 @@ describe("restoreSessionState", () => {
 			{ type: "custom", customType: "other", data: { enabled: false } },
 			{ type: "custom", customType: SESSION_ENTRY_TYPE, data: { enabled: false } },
 		];
-		expect(restoreSessionState(branch, fallback)).toEqual({ enabled: false, autoCompact: true });
-		expect(restoreSessionState(branch.slice(0, 3), fallback)).toEqual({ enabled: true, autoCompact: false });
+		assert.deepEqual(restoreSessionState(branch, fallback), { enabled: false, autoCompact: true });
+		assert.deepEqual(restoreSessionState(branch.slice(0, 3), fallback), { enabled: true, autoCompact: false });
 	});
 
 	it("returns a copy of the fallback when nothing is saved", () => {
 		const restored = restoreSessionState([], fallback);
-		expect(restored).toEqual(fallback);
-		expect(restored).not.toBe(fallback);
+		assert.deepEqual(restored, fallback);
+		assert.notEqual(restored, fallback);
 	});
 });
 
@@ -151,7 +154,7 @@ describe("SettingsStore", () => {
 	it("loads defaults, saves atomically with private permissions, and notifies", () => {
 		const file = join(dir, "nested", "config.json");
 		const store = new SettingsStore(file);
-		expect(store.load()).toEqual(defaultSettings());
+		assert.deepEqual(store.load(), defaultSettings());
 
 		const seen: string[] = [];
 		store.onChange((settings) => seen.push(settings.voiceMode));
@@ -159,11 +162,11 @@ describe("SettingsStore", () => {
 			draft.voiceMode = "voice";
 		});
 
-		expect(seen).toEqual(["voice"]);
-		expect(JSON.parse(readFileSync(file, "utf8")).voiceMode).toBe("voice");
-		expect(statSync(file).mode & 0o777).toBe(0o600);
-		expect(readdirSync(join(dir, "nested"))).toEqual(["config.json"]);
-		expect(new SettingsStore(file).load().voiceMode).toBe("voice");
+		assert.deepEqual(seen, ["voice"]);
+		assert.equal(JSON.parse(readFileSync(file, "utf8")).voiceMode, "voice");
+		assert.equal(statSync(file).mode & 0o777, 0o600);
+		assert.deepEqual(readdirSync(join(dir, "nested")), ["config.json"]);
+		assert.equal(new SettingsStore(file).load().voiceMode, "voice");
 	});
 
 	it("tells a file from before the voice switches apart from a new one", () => {
@@ -171,21 +174,21 @@ describe("SettingsStore", () => {
 		writeFileSync(file, JSON.stringify({ version: 1, voiceMode: "mirror" }));
 		const store = new SettingsStore(file);
 		store.load();
-		expect(store.isFromOlderVersion()).toBe(true);
+		assert.equal(store.isFromOlderVersion(), true);
 		store.update((draft) => {
 			draft.voice.reply = true;
 		});
 		store.load();
-		expect(store.isFromOlderVersion()).toBe(false);
-		expect(new SettingsStore(join(dir, "missing.json")).isFromOlderVersion()).toBe(false);
+		assert.equal(store.isFromOlderVersion(), false);
+		assert.equal(new SettingsStore(join(dir, "missing.json")).isFromOlderVersion(), false);
 	});
 
 	it("keeps a corrupt file aside and starts from defaults", () => {
 		const file = join(dir, "config.json");
 		writeFileSync(file, "{ not json");
 		const store = new SettingsStore(file);
-		expect(store.load()).toEqual(defaultSettings());
-		expect(readdirSync(dir).some((name) => name.startsWith("config.json.bad-"))).toBe(true);
+		assert.deepEqual(store.load(), defaultSettings());
+		assert.equal(readdirSync(dir).some((name) => name.startsWith("config.json.bad-")), true);
 	});
 
 	it("keeps one owner, never a group, and doesn't overwrite another process's changes", () => {
@@ -196,7 +199,7 @@ describe("SettingsStore", () => {
 				{ id: "4155551212", owner: true },
 			],
 		});
-		expect(settings.contacts.map((contact) => !!contact.owner)).toEqual([false, true, false]);
+		assert.deepEqual(settings.contacts.map((contact) => !!contact.owner), [false, true, false]);
 
 		const file = join(dir, "config.json");
 		const mine = new SettingsStore(file);
@@ -209,7 +212,7 @@ describe("SettingsStore", () => {
 		mine.update((draft) => {
 			draft.voiceSpeed = 1.2;
 		});
-		expect(new SettingsStore(file).load()).toMatchObject({ voiceSpeed: 1.2, contacts: [{ id: "905551234567", name: "Alex" }] });
+		assert.partialDeepStrictEqual(new SettingsStore(file).load(), { voiceSpeed: 1.2, contacts: [{ id: "905551234567", name: "Alex" }] });
 	});
 
 	it("re-validates whatever an update writes", () => {
@@ -219,7 +222,7 @@ describe("SettingsStore", () => {
 			draft.voiceSpeed = 50;
 			(draft as { voiceMode: string }).voiceMode = "shout";
 		});
-		expect(saved.voiceSpeed).toBe(2);
-		expect(saved.voiceMode).toBe("mirror");
+		assert.equal(saved.voiceSpeed, 2);
+		assert.equal(saved.voiceMode, "mirror");
 	});
 });

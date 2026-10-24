@@ -1,4 +1,4 @@
-/** /help, /status, /stop, /compact, /autocompact */
+// /help, /status, /stop, /compact, /autocompact
 
 import { languageLabel } from "../languages.ts";
 import { formatSpeed, REPLY_TOGGLES, replyLanguageLabel, VOICE_MODE_LABELS } from "../panel-model.ts";

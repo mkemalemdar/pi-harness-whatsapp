@@ -1,8 +1,6 @@
-/**
- * Recent chats, for picking allowed contacts. Filled from the history
- * WhatsApp sends right after pairing and from messages seen while connected.
- * Only ids, names and times are kept — never message text.
- */
+// Recent chats, for picking allowed contacts. Filled from the history
+// WhatsApp sends right after pairing and from messages seen while connected.
+// Only ids, names and times are kept — never message text.
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -28,7 +26,11 @@ export class RecentsStore {
 	/** Something changed since the last save. */
 	private dirty = false;
 
-	constructor(private readonly file: string) {}
+	private readonly file: string;
+
+	constructor(file: string) {
+		this.file = file;
+	}
 
 	load(): void {
 		try {

@@ -2,11 +2,22 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AnyMessageContent, WAMessage } from "baileys";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import assert from "node:assert/strict";
+import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import { Bridge, VOICE_OFF_NOTICE } from "../src/bridge.ts";
 import { SettingsStore } from "../src/settings.ts";
 import { SendQueue } from "../src/wa/outbound.ts";
 import { RecentsStore } from "../src/wa/recents.ts";
+
+// Fake time (setTimeout, setInterval, Date) starting now; advance() moves it in small steps and lets the work each
+// timer starts run in between, as real time would.
+const fakeTime = () => mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"], now: Date.now() });
+const advance = async (ms: number) => {
+	for (let done = 0; done < ms; done += 100) {
+		mock.timers.tick(100);
+		await new Promise((resolve) => setImmediate(resolve));
+	}
+};
 
 const OWNER_PHONE = "905551234567";
 
@@ -67,6 +78,8 @@ class Harness {
 	}
 
 	cleanup() {
+		// A save still waiting on its timer would make the folder again after it's gone.
+		this.recents.flush();
 		rmSync(this.dir, { recursive: true, force: true });
 	}
 }
@@ -91,19 +104,26 @@ function start(index: number, { agentStart = true } = {}) {
 }
 
 let h: Harness;
+// The bridge waits for Pi with unref'd timers (they must never keep Pi running on their own); here nothing else keeps
+// the test process alive while a test waits on them, so a timer does for the length of each test.
+let keepAlive: ReturnType<typeof setInterval> | undefined;
 beforeEach(() => {
+	keepAlive = setInterval(() => {}, 1000);
 	h = new Harness();
 	h.settings.update((draft) => {
 		draft.contacts = [{ id: OWNER_PHONE, name: "Alex", owner: true }];
 	});
 	h.bridge.markEnabled();
 });
-afterEach(() => h.cleanup());
+afterEach(() => {
+	clearInterval(keepAlive);
+	h.cleanup();
+});
 
 describe("Bridge routing", () => {
 	it("forwards an allowed message and sends only the final answer back", async () => {
 		await h.bridge.handleUpsert([incoming("fix the bug")], "notify");
-		expect(h.prompts).toEqual([{ content: "[WhatsApp · Alex · your reply goes to Alex] fix the bug", options: { deliverAs: "followUp" } }]);
+		assert.deepEqual(h.prompts, [{ content: "[WhatsApp · Alex · your reply goes to Alex] fix the bug", options: { deliverAs: "followUp" } }]);
 
 		start(0);
 		h.bridge.onAssistantMessage({ content: [{ type: "text", text: "Looking…" }, { type: "toolCall" }] });
@@ -113,15 +133,15 @@ describe("Bridge routing", () => {
 		await h.bridge.onSettled(false);
 		await flush();
 
-		expect(h.texts()).toEqual(["*Fixed* it."]);
-		expect(h.sent[0]?.jid).toBe(`${OWNER_PHONE}@s.whatsapp.net`);
+		assert.deepEqual(h.texts(), ["*Fixed* it."]);
+		assert.equal(h.sent[0]?.jid, `${OWNER_PHONE}@s.whatsapp.net`);
 	});
 
 	it("does not reply to runs started in the terminal", async () => {
 		h.bridge.onAgentStart();
 		h.bridge.onAssistantMessage({ content: [{ type: "text", text: "terminal answer" }] });
 		await h.bridge.onSettled(false);
-		expect(h.sent).toEqual([]);
+		assert.equal(h.sent.length, 0);
 	});
 
 	it("adds in-between messages, touched files and the summary when toggled on", async () => {
@@ -140,9 +160,9 @@ describe("Bridge routing", () => {
 		await flush();
 
 		const texts = h.texts();
-		expect(texts[0]).toBe("Step one");
-		expect(texts[1]).toBe("All done");
-		expect(texts[2]).toMatch(/^📝 Files changed:\n• notes\.md\n\n⚠️ 1\/2 tool calls ok · ⏱ \d+s$/);
+		assert.equal(texts[0], "Step one");
+		assert.equal(texts[1], "All done");
+		assert.match(texts[2], /^📝 Files changed:\n• notes\.md\n\n⚠️ 1\/2 tool calls ok · ⏱ \d+s$/);
 	});
 
 	it("reports a stop and falls back to 'Done' when the model wrote nothing", async () => {
@@ -153,7 +173,7 @@ describe("Bridge routing", () => {
 		start(1);
 		await h.bridge.onSettled(false);
 		await flush();
-		expect(h.texts()).toEqual(["⏹ Stopped.", "✅ Done."]);
+		assert.deepEqual(h.texts(), ["⏹ Stopped.", "✅ Done."]);
 	});
 
 	it("queues messages that arrive while Pi is busy and answers each turn", async () => {
@@ -161,7 +181,7 @@ describe("Bridge routing", () => {
 		start(0);
 		h.idle = false;
 		await h.bridge.handleUpsert([incoming("second")], "notify");
-		expect(h.prompts[1]?.options).toEqual({ deliverAs: "followUp" });
+		assert.deepEqual(h.prompts[1]?.options, { deliverAs: "followUp" });
 
 		h.bridge.onAssistantMessage({ content: [{ type: "text", text: "answer one" }] });
 		h.bridge.onTurnStart();
@@ -169,7 +189,7 @@ describe("Bridge routing", () => {
 		h.bridge.onAssistantMessage({ content: [{ type: "text", text: "answer two" }] });
 		await h.bridge.onSettled(false);
 		await flush();
-		expect(h.texts()).toEqual(["answer one", "answer two"]);
+		assert.deepEqual(h.texts(), ["answer one", "answer two"]);
 	});
 
 	it("keeps the answer to a terminal prompt in the terminal when WhatsApp queues behind it", async () => {
@@ -184,7 +204,7 @@ describe("Bridge routing", () => {
 		h.bridge.onAssistantMessage({ content: [{ type: "text", text: "phone answer" }] });
 		await h.bridge.onSettled(false);
 		await flush();
-		expect(h.texts()).toEqual(["phone answer"]);
+		assert.deepEqual(h.texts(), ["phone answer"]);
 	});
 
 	it("sends the owner answers to terminal prompts when Terminal answers is on", async () => {
@@ -196,8 +216,8 @@ describe("Bridge routing", () => {
 		h.bridge.onAssistantMessage({ content: [{ type: "text", text: "All green." }] });
 		await h.bridge.onSettled(false);
 		await flush();
-		expect(h.texts()).toEqual(['💻 Terminal: "run the tests"\n\nAll green.']);
-		expect(h.sent[0]?.jid).toBe(`${OWNER_PHONE}@s.whatsapp.net`);
+		assert.deepEqual(h.texts(), ['💻 Terminal: "run the tests"\n\nAll green.']);
+		assert.equal(h.sent[0]?.jid, `${OWNER_PHONE}@s.whatsapp.net`);
 	});
 
 	it("sends each queued chat its own answer", async () => {
@@ -215,20 +235,20 @@ describe("Bridge routing", () => {
 		h.bridge.onAssistantMessage({ content: [{ type: "text", text: "for Sam" }] });
 		await h.bridge.onSettled(false);
 		await flush();
-		expect(h.sent.map((entry) => [entry.jid.split("@")[0], (entry.content as { text: string }).text])).toEqual([
+		assert.deepEqual(h.sent.map((entry) => [entry.jid.split("@")[0], (entry.content as { text: string }).text]), [
 			[OWNER_PHONE, "for Alex"],
 			[OTHER, "for Sam"],
 		]);
 	});
 
 	it("tells the chat when Pi never starts on its message", async () => {
-		vi.useFakeTimers();
+		fakeTime();
 		try {
 			await h.bridge.handleUpsert([incoming("hello?")], "notify");
-			await vi.advanceTimersByTimeAsync(9000);
-			expect(h.texts()).toEqual(["⚠️ Pi couldn't start on your message. Check the terminal (model or login problem?)."]);
+			await advance(9000);
+			assert.deepEqual(h.texts(), ["⚠️ Pi couldn't start on your message. Check the terminal (model or login problem?)."]);
 		} finally {
-			vi.useRealTimers();
+			mock.timers.reset();
 		}
 	});
 
@@ -245,8 +265,8 @@ describe("Bridge routing", () => {
 		h.bridge.onAssistantMessage({ content: [{ type: "thinking" }], stopReason: "length" });
 		await h.bridge.onSettled(false);
 		await flush();
-		expect(deliveries).toEqual([]);
-		expect(h.texts()).toEqual(["⚠️ The model hit its output limit before writing an answer. Try again, or raise the model's output limit."]);
+		assert.equal(deliveries.length, 0);
+		assert.deepEqual(h.texts(), ["⚠️ The model hit its output limit before writing an answer. Try again, or raise the model's output limit."]);
 	});
 
 	it("labels voice notes with where the spoken reply goes", async () => {
@@ -262,14 +282,14 @@ describe("Bridge routing", () => {
 			deliverReply: async () => {},
 		};
 		await h.bridge.handleUpsert([incoming("voice")], "notify");
-		expect(label).toBe("[WhatsApp · Alex · voice note · your reply is spoken to Alex]");
+		assert.equal(label, "[WhatsApp · Alex · voice note · your reply is spoken to Alex]");
 		start(0);
 		await h.bridge.onSettled(false);
 		h.settings.update((draft) => {
 			draft.voiceMode = "off";
 		});
 		await h.bridge.handleUpsert([incoming("voice")], "notify");
-		expect(label).toBe("[WhatsApp · Alex · voice note · your reply goes to Alex]");
+		assert.equal(label, "[WhatsApp · Alex · voice note · your reply goes to Alex]");
 		// Voice replies off: never "spoken", whatever the reply type says.
 		start(1);
 		await h.bridge.onSettled(false);
@@ -278,7 +298,7 @@ describe("Bridge routing", () => {
 			draft.voice.reply = false;
 		});
 		await h.bridge.handleUpsert([incoming("voice")], "notify");
-		expect(label).toBe("[WhatsApp · Alex · voice note · your reply goes to Alex]");
+		assert.equal(label, "[WhatsApp · Alex · voice note · your reply goes to Alex]");
 	});
 
 	it("answers voice notes with 'please type' while voice notes are off, without bothering Pi", async () => {
@@ -294,17 +314,17 @@ describe("Bridge routing", () => {
 		};
 		await h.bridge.handleUpsert([voiceNote()], "notify");
 		await h.bridge.handleUpsert([voiceNote()], "notify");
-		expect(h.prompts).toEqual([]);
-		expect(h.texts()).toEqual([VOICE_OFF_NOTICE, VOICE_OFF_NOTICE]);
+		assert.equal(h.prompts.length, 0);
+		assert.deepEqual(h.texts(), [VOICE_OFF_NOTICE, VOICE_OFF_NOTICE]);
 		// The first message of someone new, allowed in the terminal, gets the same answer.
 		h.settings.update((draft) => {
 			draft.contacts = [];
 		});
 		await h.bridge.handleUpsert([voiceNote({ key: { id: "NEW1", remoteJid: "4477001122@s.whatsapp.net", fromMe: false } })], "notify");
-		expect(h.prompts).toEqual([]);
-		expect(h.texts().at(-1)).toBe(VOICE_OFF_NOTICE);
-		expect(h.bridge.systemPromptSection()).not.toContain("Voice notes arrive");
-		expect(h.bridge.systemPromptSection()).not.toContain("your reply is spoken");
+		assert.equal(h.prompts.length, 0);
+		assert.equal(h.texts().at(-1), VOICE_OFF_NOTICE);
+		assert.ok(!h.bridge.systemPromptSection().includes("Voice notes arrive"));
+		assert.ok(!h.bridge.systemPromptSection().includes("your reply is spoken"));
 	});
 
 	it("hands messages to Pi in the order they arrived, even when one takes longer to prepare", async () => {
@@ -322,12 +342,12 @@ describe("Bridge routing", () => {
 		const first = h.bridge.handleUpsert([incoming("first")], "notify");
 		const second = h.bridge.handleUpsert([incoming("second")], "notify");
 		await new Promise((resolve) => setTimeout(resolve, 20));
-		expect(h.prompts).toEqual([]);
+		assert.equal(h.prompts.length, 0);
 		release();
 		await first;
 		start(0);
 		await second;
-		expect(h.prompts.map((prompt) => String(prompt.content).split("] ")[1])).toEqual(["first", "second"]);
+		assert.deepEqual(h.prompts.map((prompt) => String(prompt.content).split("] ")[1]), ["first", "second"]);
 	});
 
 	describe("groups", () => {
@@ -358,18 +378,16 @@ describe("Bridge routing", () => {
 		it("answers replies and @mentions by default, with the messages before as context", async () => {
 			await h.bridge.handleUpsert([groupMessage("deploy tomorrow?")], "notify");
 			await h.bridge.handleUpsert([groupMessage("caption text", { image: true })], "notify");
-			expect(h.prompts).toEqual([]);
+			assert.equal(h.prompts.length, 0);
 			await h.bridge.handleUpsert([groupMessage("@Pi what do you think?", { mention: true })], "notify");
-			expect(h.prompts).toHaveLength(1);
-			expect(h.prompts[0]!.content).toBe(
-				'[WhatsApp group "Team" · earlier messages, for context]\nAlex: deploy tomorrow?\nAlex: [sent an image] caption text\n' +
-					'[WhatsApp group "Team" · Alex · your reply goes to the group] @Pi what do you think?',
-			);
+			assert.equal(h.prompts.length, 1);
+			assert.equal(h.prompts[0]!.content, '[WhatsApp group "Team" · earlier messages, for context]\nAlex: deploy tomorrow?\nAlex: [sent an image] caption text\n' +
+					'[WhatsApp group "Team" · Alex · your reply goes to the group] @Pi what do you think?');
 			start(0);
 			await h.bridge.onSettled(false);
 			await h.bridge.handleUpsert([groupMessage("and now?", { replyToBot: true })], "notify");
 			// A reply to Pi counts too; the context was used up by the previous question.
-			expect(h.prompts[1]!.content).toBe('[WhatsApp group "Team" · Alex · your reply goes to the group] and now?');
+			assert.equal(h.prompts[1]!.content, '[WhatsApp group "Team" · Alex · your reply goes to the group] and now?');
 		});
 
 		it("follows the setting", async () => {
@@ -377,12 +395,12 @@ describe("Bridge routing", () => {
 				draft.groupReplies = "mentions";
 			});
 			await h.bridge.handleUpsert([groupMessage("thanks", { replyToBot: true })], "notify");
-			expect(h.prompts).toEqual([]);
+			assert.equal(h.prompts.length, 0);
 			h.settings.update((draft) => {
 				draft.groupReplies = "all";
 			});
 			await h.bridge.handleUpsert([groupMessage("hello everyone")], "notify");
-			expect(h.prompts).toHaveLength(1);
+			assert.equal(h.prompts.length, 1);
 		});
 
 		it("with voice notes off, answers only a voice note that replies to Pi", async () => {
@@ -400,12 +418,12 @@ describe("Bridge routing", () => {
 				draft.groupReplies = "all";
 			});
 			await h.bridge.handleUpsert([groupVoice(false)], "notify");
-			expect(h.texts()).toEqual([]);
+			assert.equal(h.texts().length, 0);
 			await h.bridge.handleUpsert([groupVoice(true)], "notify");
-			expect(h.texts()).toEqual([VOICE_OFF_NOTICE]);
+			assert.deepEqual(h.texts(), [VOICE_OFF_NOTICE]);
 			await h.bridge.handleUpsert([groupMessage("so?", { mention: true })], "notify");
 			// The first voice note is context, as a note only.
-			expect(h.prompts[0]!.content).toContain("Alex: [sent a voice note]");
+			assert.ok(String(h.prompts[0]!.content).includes("Alex: [sent a voice note]"));
 		});
 
 		it("asks WhatsApp once for the name of a group it doesn't know", async () => {
@@ -420,9 +438,9 @@ describe("Bridge routing", () => {
 			await h.bridge.handleUpsert([groupMessage("hi")], "notify");
 			await h.bridge.handleUpsert([groupMessage("hi again")], "notify");
 			await new Promise((resolve) => setTimeout(resolve, 10));
-			expect(asked).toEqual([GROUP]);
-			expect(h.settings.get().contacts.find((contact) => contact.id === GROUP)?.name).toBe("Weekend Trip");
-			expect(h.recents.nameOf(GROUP)).toBe("Weekend Trip");
+			assert.deepEqual(asked, [GROUP]);
+			assert.equal(h.settings.get().contacts.find((contact) => contact.id === GROUP)?.name, "Weekend Trip");
+			assert.equal(h.recents.nameOf(GROUP), "Weekend Trip");
 		});
 
 		it("takes known commands and menu numbers, and calls the mention @Pi", async () => {
@@ -442,10 +460,8 @@ describe("Bridge routing", () => {
 			await h.bridge.handleUpsert([groupMessage("/status")], "notify");
 			await h.bridge.handleUpsert([groupMessage("2", { replyToBot: true })], "notify");
 			await h.bridge.handleUpsert([groupMessage(`@${BOT} look`, { mention: true })], "notify");
-			expect(handled).toEqual(["/status", "2", "@Pi look"]);
-			expect(h.prompts[0]!.content).toBe(
-				'[WhatsApp group "Team" · earlier messages, for context]\nAlex: /home/alex is full\n[WhatsApp group "Team" · Alex · your reply goes to the group] @Pi look',
-			);
+			assert.deepEqual(handled, ["/status", "2", "@Pi look"]);
+			assert.equal(h.prompts[0]!.content, '[WhatsApp group "Team" · earlier messages, for context]\nAlex: /home/alex is full\n[WhatsApp group "Team" · Alex · your reply goes to the group] @Pi look');
 		});
 	});
 
@@ -455,21 +471,21 @@ describe("Bridge routing", () => {
 		await h.bridge.handleUpsert([message], "notify");
 		await h.bridge.handleUpsert([incoming("history")], "append");
 		await h.bridge.handleUpsert([incoming("who?", { from: "4477001122" })], "notify");
-		expect(h.prompts).toHaveLength(1);
-		expect(h.notices.some((notice) => notice.includes("ignored a message from Alex"))).toBe(true);
-		expect(h.recents.list().map((chat) => chat.id)).toContain("4477001122");
+		assert.equal(h.prompts.length, 1);
+		assert.equal(h.notices.some((notice) => notice.includes("ignored a message from Alex")), true);
+		assert.ok(h.recents.list().map((chat) => chat.id).includes("4477001122"));
 	});
 
 	it("skips messages from before WhatsApp was turned on and tells the chat", async () => {
-		vi.useFakeTimers();
+		fakeTime();
 		try {
 			await h.bridge.handleUpsert([incoming("old", { at: Date.now() - 10 * 60_000 })], "notify");
-			expect(h.prompts).toEqual([]);
-			await vi.advanceTimersByTimeAsync(9000);
-			expect(h.notices.some((notice) => notice.includes("1 message arrived while off"))).toBe(true);
-			expect(h.texts()[0]).toMatch(/^⏸ 1 message arrived while Pi's WhatsApp was off/);
+			assert.equal(h.prompts.length, 0);
+			await advance(9000);
+			assert.equal(h.notices.some((notice) => notice.includes("1 message arrived while off")), true);
+			assert.match(h.texts()[0], /^⏸ 1 message arrived while Pi's WhatsApp was off/);
 		} finally {
-			vi.useRealTimers();
+			mock.timers.reset();
 		}
 	});
 
@@ -478,11 +494,11 @@ describe("Bridge routing", () => {
 			draft.contacts = [];
 		});
 		await h.bridge.handleUpsert([incoming("hi pi")], "notify");
-		expect(h.settings.get().contacts).toEqual([{ id: OWNER_PHONE, name: "Alex", owner: true }]);
-		expect(h.prompts).toHaveLength(1);
+		assert.deepEqual(h.settings.get().contacts, [{ id: OWNER_PHONE, name: "Alex", owner: true }]);
+		assert.equal(h.prompts.length, 1);
 
 		h.confirmAnswer = false;
 		await h.bridge.handleUpsert([incoming("me too", { from: "4477001122" })], "notify");
-		expect(h.prompts).toHaveLength(1);
+		assert.equal(h.prompts.length, 1);
 	});
 });

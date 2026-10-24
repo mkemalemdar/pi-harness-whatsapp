@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import { groupMarker, ListMenu, type MenuItem, MenuStack } from "../src/panel-components.ts";
 
 const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never;
@@ -27,13 +28,13 @@ describe("ListMenu", () => {
 			events,
 		);
 		list.handleInput(KEY.down);
-		expect(list.selected()?.id).toBe("b");
+		assert.equal(list.selected()?.id, "b");
 		list.handleInput(KEY.enter);
 		list.handleInput(KEY.space);
 		list.handleInput(KEY.down);
-		expect(list.selected()?.id).toBe("a");
+		assert.equal(list.selected()?.id, "a");
 		list.handleInput(KEY.escape);
-		expect(events).toEqual(["select:b", "toggle:b", "cancel"]);
+		assert.deepEqual(events, ["select:b", "toggle:b", "cancel"]);
 	});
 
 	it("renders the title, description, markers, details and the selected item's description", () => {
@@ -45,17 +46,17 @@ describe("ListMenu", () => {
 			[],
 		);
 		const text = list.render(80).join("\n");
-		expect(text).toContain("Title");
-		expect(text).toContain("What this setting does.");
-		expect(text).toMatch(/→ ● on\s+sent/);
-		expect(text).toContain("Turns it on.");
-		expect(list.render(80).at(-1)).toBe("");
+		assert.ok(text.includes("Title"));
+		assert.ok(text.includes("What this setting does."));
+		assert.match(text, /→ ● on\s+sent/);
+		assert.ok(text.includes("Turns it on."));
+		assert.equal(list.render(80).at(-1), "");
 		// Moving to a row without an explanation keeps the same number of lines.
 		const before = list.render(80).length;
 		list.handleInput(KEY.down);
-		expect(list.render(80).length).toBe(before);
+		assert.equal(list.render(80).length, before);
 		list.setStatus("Deleted 2 files.", "ok");
-		expect(list.render(80).join("\n")).toContain("Deleted 2 files.");
+		assert.ok(list.render(80).join("\n").includes("Deleted 2 files."));
 	});
 });
 
@@ -71,23 +72,23 @@ describe("MenuStack", () => {
 		stack.push(menu([{ id: "x", label: "X" }], events));
 		stack.push(menu([{ id: "y", label: "Y" }], events));
 		stack.handleInput(KEY.enter);
-		expect(events).toEqual(["select:y"]);
+		assert.deepEqual(events, ["select:y"]);
 		stack.pop();
-		expect(closed).toBe(0);
-		expect(returned).toBe(1);
+		assert.equal(closed, 0);
+		assert.equal(returned, 1);
 		stack.push(menu([{ id: "z", label: "Z" }], events));
 		stack.push(menu([{ id: "w", label: "W" }], events));
 		stack.home();
-		expect(returned).toBe(2);
+		assert.equal(returned, 2);
 		stack.pop();
-		expect(closed).toBe(1);
+		assert.equal(closed, 1);
 	});
 });
 
 describe("groupMarker", () => {
 	it("shows all, some or none", () => {
-		expect(groupMarker(2, 2)).toBe("[x]");
-		expect(groupMarker(1, 2)).toBe("[-]");
-		expect(groupMarker(0, 2)).toBe("[ ]");
+		assert.equal(groupMarker(2, 2), "[x]");
+		assert.equal(groupMarker(1, 2), "[-]");
+		assert.equal(groupMarker(0, 2), "[ ]");
 	});
 });

@@ -1,7 +1,5 @@
-/**
- * Turns raw Baileys messages into one simple shape, decides who may reach Pi,
- * and remembers which message ids were already handled.
- */
+// Turns raw Baileys messages into one simple shape, decides who may reach Pi,
+// and remembers which message ids were already handled.
 
 import { extractMessageContent, type proto, toNumber, type WAMessage } from "baileys";
 import type { Contact } from "../settings.ts";
@@ -267,7 +265,11 @@ export function checkAccess(message: InboundMessage, contacts: readonly Contact[
 export class SeenIds {
 	private readonly ids = new Set<string>();
 
-	constructor(private readonly capacity = 2000) {}
+	private readonly capacity: number;
+
+	constructor(capacity: number = 2000) {
+		this.capacity = capacity;
+	}
 
 	/** True the first time an id is seen. */
 	add(id: string): boolean {

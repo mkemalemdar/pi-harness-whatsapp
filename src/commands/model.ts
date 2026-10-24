@@ -1,4 +1,4 @@
-/** /model and /think */
+// /model and /think
 
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { Command, CommandEnv } from "./types.ts";

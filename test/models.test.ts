@@ -4,7 +4,8 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { type ModelSpec, ModelStore } from "../src/voice/models.ts";
 
 const DATA = Buffer.from(Array.from({ length: 200_000 }, (_, i) => i % 251));
@@ -59,18 +60,18 @@ describe("ModelStore downloads", () => {
 		return new ModelStore(dir, undefined, `http://127.0.0.1:${(server.address() as AddressInfo).port}`);
 	};
 
-	it("continues an interrupted download where it stopped, and checks the checksum", async () => {
+	it("continues an interrupted download where it stopped, and checks the checksum", { timeout: 20_000 }, async () => {
 		const hub = fakeHub({ dropFirst: true });
 		const store = await start(hub);
 		const folder = await store.ensure(SPEC);
-		expect(readFileSync(join(folder, "model.bin")).equals(DATA)).toBe(true);
-		expect(hub.ranges[0]).toBe("none");
-		expect(hub.ranges[1]).toMatch(/^bytes=[1-9]\d*-$/);
-		expect(store.isInstalled(SPEC)).toBe(true);
-		expect(existsSync(join(folder, "README.md"))).toBe(false);
-	}, 20_000);
+		assert.equal(readFileSync(join(folder, "model.bin")).equals(DATA), true);
+		assert.equal(hub.ranges[0], "none");
+		assert.match(hub.ranges[1], /^bytes=[1-9]\d*-$/);
+		assert.equal(store.isInstalled(SPEC), true);
+		assert.equal(existsSync(join(folder, "README.md")), false);
+	});
 
-	it("cancels a running download and lets go of its files", async () => {
+	it("cancels a running download and lets go of its files", { timeout: 20_000 }, async () => {
 		const hub = fakeHub({});
 		// Answer the file request slowly, a few bytes at a time.
 		hub.server.removeAllListeners("request");
@@ -86,24 +87,24 @@ describe("ModelStore downloads", () => {
 		const store = await start(hub);
 		const download = store.ensure(SPEC);
 		await new Promise((resolve) => setTimeout(resolve, 300));
-		expect(store.isDownloading(SPEC)).toBe(true);
+		assert.equal(store.isDownloading(SPEC), true);
 		const started = Date.now();
 		await store.cancelDownloads();
-		await expect(download).rejects.toThrow(/cancelled/);
-		expect(Date.now() - started).toBeLessThan(2000);
-		expect(store.isDownloading(SPEC)).toBe(false);
+		await assert.rejects(download, /cancelled/);
+		assert.ok(Date.now() - started < 2000);
+		assert.equal(store.isDownloading(SPEC), false);
 		store.remove(SPEC);
-		expect(readdirSync(dir)).toEqual([]);
-	}, 20_000);
+		assert.deepEqual(readdirSync(dir), []);
+	});
 
-	it("rejects a file whose checksum doesn't match, and doesn't retry a missing file", async () => {
+	it("rejects a file whose checksum doesn't match, and doesn't retry a missing file", { timeout: 20_000 }, async () => {
 		const bad = await start(fakeHub({ sha: "0".repeat(64) }));
-		await expect(bad.ensure(SPEC)).rejects.toThrow(/checksum/);
-		expect(bad.isInstalled(SPEC)).toBe(false);
+		await assert.rejects(bad.ensure(SPEC), /checksum/);
+		assert.equal(bad.isInstalled(SPEC), false);
 		server.close();
 		const missing = await start(fakeHub({ missing: true }));
 		const started = Date.now();
-		await expect(missing.ensure(SPEC)).rejects.toThrow(/404/);
-		expect(Date.now() - started).toBeLessThan(1500);
-	}, 20_000);
+		await assert.rejects(missing.ensure(SPEC), /404/);
+		assert.ok(Date.now() - started < 1500);
+	});
 });

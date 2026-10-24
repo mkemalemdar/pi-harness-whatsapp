@@ -1,3 +1,4 @@
+// WhatsApp poll menus and the WhatsApp commands.
 import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -8,7 +9,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import { formatCompaction, formatTokens } from "../src/commands/session.ts";
 import { CommandRouter, parseCommand } from "../src/commands/router.ts";
 import type { CommandEnv } from "../src/commands/types.ts";
-import { SettingsStore } from "../src/settings.ts";
+import { SettingsStore } from "../src/settings-store.ts";
 import type { InboundMessage } from "../src/wa/inbound.ts";
 import { SendQueue } from "../src/wa/outbound.ts";
 import { MAX_POLL_OPTIONS, type Menu, paginate, PollMenus } from "../src/wa/polls.ts";

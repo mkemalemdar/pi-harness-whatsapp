@@ -6,10 +6,10 @@ import { readFileSync, statSync } from "node:fs";
 import { basename, extname, isAbsolute, resolve } from "node:path";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { contactLabel } from "./contacts-flow.ts";
+import { contactLabel } from "./ui/contacts-flow.ts";
 import type { Controller } from "./controller.ts";
 import { createLogger } from "./log.ts";
-import { normalizeContactId } from "./settings.ts";
+import { normalizeContactId } from "./core/settings.ts";
 import { contactJid } from "./wa/jid.ts";
 
 const log = createLogger("tools");

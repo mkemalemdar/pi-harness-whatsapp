@@ -6,11 +6,12 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { WAMessage } from "baileys";
-import { contactLabel } from "./contacts-flow.ts";
-import { languageLabel } from "./languages.ts";
+import { contactLabel } from "./ui/contacts-flow.ts";
+import { languageLabel } from "./core/languages.ts";
 import { createLogger } from "./log.ts";
-import { formatActivity, formatTouchedFiles, RunReport } from "./run-report.ts";
-import { type Contact, MIRROR, replyMode, type SettingsStore } from "./settings.ts";
+import { formatActivity, formatTouchedFiles, RunReport } from "./core/run-report.ts";
+import { type Contact, MIRROR, replyMode } from "./core/settings.ts";
+import { type SettingsStore } from "./settings-store.ts";
 import type { WhatsAppConnection } from "./wa/connection.ts";
 import { type Access, addressedToSelf, checkAccess, type InboundMessage, parseMessage, SeenIds, senderIdentity } from "./wa/inbound.ts";
 import { contactJid, isLidJid, jidUser, phoneJid } from "./wa/jid.ts";

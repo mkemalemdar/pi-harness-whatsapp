@@ -1,6 +1,7 @@
+// Markdown (what models write) turned into WhatsApp formatting, and long answers split.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { isCodeHeavy, markdownToWhatsApp, splitForSpeech, splitMessage, textForSpeech } from "../src/format.ts";
+import { isCodeHeavy, markdownToWhatsApp, splitForSpeech, splitMessage, textForSpeech } from "../src/core/format.ts";
 
 describe("markdownToWhatsApp", () => {
 	it("converts emphasis", () => {

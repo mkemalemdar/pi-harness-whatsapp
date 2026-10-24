@@ -1,8 +1,8 @@
 // /voice, /lang, /speed, /replies — the same settings as the terminal panel.
 
-import { languageLabel } from "../languages.ts";
-import { formatSpeed, REPLY_TOGGLES, replyLanguageLabel, VOICE_MODE_LABELS } from "../panel-model.ts";
-import { clampSpeed, MAX_SPEED, MIN_SPEED, MIRROR, replyMode, SPEED_PRESETS, type VoiceMode } from "../settings.ts";
+import { languageLabel } from "../core/languages.ts";
+import { formatSpeed, REPLY_TOGGLES, replyLanguageLabel, VOICE_MODE_LABELS } from "../core/panel-model.ts";
+import { clampSpeed, MAX_SPEED, MIN_SPEED, MIRROR, replyMode, SPEED_PRESETS, type VoiceMode } from "../core/settings.ts";
 import { notifyTerminal, type Command, type CommandEnv } from "./types.ts";
 
 const VOICE_ALIASES: Record<string, VoiceMode> = {

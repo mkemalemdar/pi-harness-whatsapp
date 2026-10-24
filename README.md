@@ -49,9 +49,27 @@ Start Pi and run `/whatsapp`. Set **WhatsApp** to **on**, and a QR code appears 
 
 Nobody is allowed to talk to Pi yet. Send a message to the paired number from your phone and Pi asks, in the terminal, whether to allow you and make you the **owner**. You can also pick people from **Allowed chats → Pick from recent chats** or add a number by hand.
 
-You can also use your own number: the "Message yourself" chat works and counts as the owner.
+You can also use your own number, with no second phone or SIM: you then talk to Pi in your "Message yourself" chat. See [One number or two](#one-number-or-two).
 
 Then send `/help` on WhatsApp: it lists every command and shows your current settings.
+
+## One number or two
+
+Pi is a linked device of one WhatsApp number, like WhatsApp Web. That can be your own number or a second one.
+
+**Your own number** (nothing extra needed):
+
+- Scan the QR code with your own phone. Then open the **"Message yourself"** chat (your own name, marked "You", at the top of the chat list or found with search) and write to Pi there. That chat always counts as the owner, so every command works (`/help`, `/model`, …), and Pi's answers come back in the same chat.
+- Pi's answers are messages from your own account, so WhatsApp may not notify you about them: keep the chat open, or check back.
+- Messages you write to other people are your own messages: Pi never reacts to them.
+- **If you allow other chats, Pi answers them as you.** A contact in Allowed chats who writes to you gets Pi's answer from your account; in an allowed group, someone who @mentions you or replies to you gets Pi's answer in the group, under your name. Allow chats only if that's what you want. Nobody is allowed until you add them.
+- Your own messages in a group are ignored, including when you @mention yourself, since they come from the same account. So you can't talk to Pi in a group, not even in a group with only you in it; use "Message yourself".
+
+**A second number** (a spare SIM, or WhatsApp Business with a second number on a dual-SIM phone):
+
+- Scan the QR code with the phone that has the second number. Pi is then a contact of its own: message it from your phone like any other person, and it asks in the terminal whether to make you the owner.
+- Add it to groups like any member, and people talk to it with @mentions or replies (see [Groups](#groups)).
+- Your own account stays out of it: if WhatsApp ever restricts the second number for using an unofficial client, your own number isn't affected.
 
 ## How it works
 
@@ -75,7 +93,7 @@ What Pi reacts to is set by **In groups, answer**: **replies and @mentions** (de
 - **Context:** when Pi is addressed, it also gets the last 20 messages written since it was last addressed, so "@Pi what do you think?" makes sense. Only text goes into that context; images, files and voice notes show up only as a note like `[sent an image]`. These messages are kept in memory only.
 - **Images:** send an image with a caption that @mentions Pi, or reply to someone's image and @mention Pi; Pi sees that image.
 - **Commands** (`/status`, `/model`, …) work in groups without a mention, with the same rules as in private chats: only the owner can change Pi by default. A number as a poll answer only counts in a group if it replies to the poll.
-- **Pi needs its own number for groups.** If Pi runs on your own number, your messages in a group are your own messages, and Pi ignores them there; the "Message yourself" chat still works.
+- **Pi needs its own number for you to talk to it in groups.** If Pi runs on your own number, your messages in a group are your own messages, and Pi ignores them there (others who @mention you get Pi's answer, under your name); the "Message yourself" chat still works. See [One number or two](#one-number-or-two).
 - **Be careful:** everyone in an allowed group can ask Pi things, and Pi can run commands on this machine. Only allow groups where you trust every member.
 
 ## Settings: `/whatsapp`
@@ -104,7 +122,7 @@ Every row opens a small menu with the choices and a short explanation. Nothing c
 | Languages | Reply language | **Mirror me** (the language you used) or one of your languages. |
 | | My languages | Tick the languages you use (**English**). See [Voice](#voice) for the 15 languages. |
 | | Fallback language | Used only when Pi can't tell which language to use (**the first of your languages**). |
-| Danger | Remove everything (before uninstalling) | Unlinks Pi from your phone and deletes everything it made. Asks first. See [Uninstall](#uninstall). |
+| Danger | Remove everything… | Unlinks Pi from your phone and deletes everything it made. Asks first. See [Uninstall](#uninstall). |
 | | Log file | Where the log is (shown, not a setting). |
 
 Greyed-out rows can still be selected: they say which tick in **Voice notes** turns them on.
@@ -224,7 +242,7 @@ The folder is private: only your user can open it. If you set `PI_HARNESS_WHATSA
 
 Do it in this order, so nothing is left behind.
 
-1. **Clean up from inside Pi.** Close every other Pi window first. Then run `/whatsapp` → **Danger** → **Remove everything (before uninstalling)…** (or type `/whatsapp remove`) and confirm. Pi:
+1. **Clean up from inside Pi.** Close every other Pi window first. Then run `/whatsapp` → **Danger** → **Remove everything…** (or type `/whatsapp remove`) and confirm. Pi:
    - unlinks itself from your phone (WhatsApp → Settings → Linked devices),
    - stops any speech-file download that's still running,
    - deletes `~/.pi/agent/pi-harness-whatsapp/` with everything in it: the WhatsApp login, speech files, settings, allowed chats, recent chats, log and received files,
@@ -284,6 +302,15 @@ Removal is careful: with apt, it first does a dry run and keeps everything if re
 - **npm warns that install scripts of `baileys` and `protobufjs` were skipped:** harmless. Those scripts only check versions, and the extension doesn't need them. Installs from GitHub don't show it. To hide it for installs from npm too: `cd ~/.pi/agent/npm && npm install-scripts deny baileys protobufjs`.
 - **More detail:** set `PI_HARNESS_WHATSAPP_DEBUG=1` before starting Pi, and check the log. Debug logging also writes WhatsApp's own internal messages, which can contain message content, so turn it off again afterwards.
 
+## Limits
+
+- It uses Baileys, an unofficial WhatsApp Web client: WhatsApp can restrict numbers that use one, and a WhatsApp change can break it until Baileys is updated.
+- One pi process holds the connection at a time; others show `WA: in use by Pi #…`.
+- Messages that arrive while WhatsApp is off (or pi isn't running) aren't answered later; the chat is told once.
+- On your own number, you can't talk to Pi in groups (see [One number or two](#one-number-or-two)).
+- Voice notes need `ffmpeg`, and aren't available on Intel Macs or Windows on ARM.
+- Calls, statuses and reactions aren't handled.
+
 ## Development
 
 ```bash
@@ -295,6 +322,9 @@ pi -ne -e .            # run Pi with only this extension
 ```
 
 `PI_HARNESS_WHATSAPP_DIR=/some/dir` keeps test data away from your real login and settings.
+
+- [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md): the design, file by file.
+- [docs/TESTING.md](docs/TESTING.md): the unit tests, and `node test/integration/whatsapp.mjs`, which runs a real pi against a fake WhatsApp and a fake model (no phone, account or GPU needed).
 
 ## License
 

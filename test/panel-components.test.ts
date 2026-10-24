@@ -1,6 +1,7 @@
+// The /whatsapp menus' building blocks: list menus, the menu stack, markers.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { groupMarker, ListMenu, type MenuItem, MenuStack } from "../src/panel-components.ts";
+import { groupMarker, ListMenu, type MenuItem, MenuStack } from "../src/ui/panel-components.ts";
 
 const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never;
 const KEY = { up: "\u001b[A", down: "\u001b[B", enter: "\r", space: " ", escape: "\u001b" };

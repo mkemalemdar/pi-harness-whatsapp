@@ -1,3 +1,5 @@
+// The connection's basics: the lock (one pi at a time), what to do when it closes, parsing messages, who may talk
+// to pi, seen ids, recent chats, the login check and group addressing.
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";

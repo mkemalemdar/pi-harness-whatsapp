@@ -1,3 +1,4 @@
+// The bridge between WhatsApp and pi: which messages reach pi, where answers go, queues, groups and notices.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -5,7 +6,7 @@ import type { AnyMessageContent, WAMessage } from "baileys";
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import { Bridge, VOICE_OFF_NOTICE } from "../src/bridge.ts";
-import { SettingsStore } from "../src/settings.ts";
+import { SettingsStore } from "../src/settings-store.ts";
 import { SendQueue } from "../src/wa/outbound.ts";
 import { RecentsStore } from "../src/wa/recents.ts";
 

@@ -4,9 +4,10 @@
 import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import type { MediaHandler, PreparedPrompt } from "./bridge.ts";
-import { isCodeHeavy, splitForSpeech, textForSpeech } from "./format.ts";
+import { isCodeHeavy, splitForSpeech, textForSpeech } from "./core/format.ts";
 import { createLogger } from "./log.ts";
-import { replyMode, type SettingsStore } from "./settings.ts";
+import { replyMode } from "./core/settings.ts";
+import { type SettingsStore } from "./settings-store.ts";
 import { chooseSpeechLanguage } from "./voice/language.ts";
 import { MAX_SPOKEN_CHARS, MAX_VOICE_PARTS, type VoiceService } from "./voice/service.ts";
 import type { WhatsAppConnection } from "./wa/connection.ts";

@@ -1,3 +1,6 @@
+// Where the extension keeps its files (pi's agent folder, or PI_HARNESS_WHATSAPP_DIR), keeping them private, and
+// deleting them for "Remove everything".
+
 import { chmodSync, existsSync, readdirSync, rmdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";

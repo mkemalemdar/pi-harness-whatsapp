@@ -1,3 +1,4 @@
+// What the /whatsapp panel shows: sections, rows, choices, greyed-out rows.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
@@ -18,8 +19,8 @@ import {
 	type SpeechInfo,
 	voicePlan,
 	voiceSummary,
-} from "../src/panel-model.ts";
-import { addLanguage, defaultSettings, MIRROR } from "../src/settings.ts";
+} from "../src/core/panel-model.ts";
+import { addLanguage, defaultSettings, MIRROR } from "../src/core/settings.ts";
 
 const speech: SpeechInfo = { installed: new Set(["whisper-large-v3-turbo-int8-ov"]), downloading: new Set(), sizesMB: { "whisper-large-v3-turbo-int8-ov": 828 } };
 

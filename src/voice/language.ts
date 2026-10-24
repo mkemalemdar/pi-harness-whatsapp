@@ -1,8 +1,8 @@
 // Which language a text is in, limited to the languages the user enabled.
 
 import { franc } from "franc";
-import { getLanguage } from "../languages.ts";
-import { MIRROR } from "../settings.ts";
+import { getLanguage } from "../core/languages.ts";
+import { MIRROR } from "../core/settings.ts";
 
 /** Detects the language of `text` among `enabled` codes; undefined when unsure. */
 export function detectLanguage(text: string, enabled: readonly string[]): string | undefined {

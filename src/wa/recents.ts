@@ -4,7 +4,7 @@
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { RecentChat } from "../contacts-flow.ts";
+import type { RecentChat } from "../ui/contacts-flow.ts";
 import { isRemoved } from "../removed.ts";
 import { isGroupJid, isIgnoredJid, isLidJid, isPhoneJid, jidUser, normalizeJid } from "./jid.ts";
 

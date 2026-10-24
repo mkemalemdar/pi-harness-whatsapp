@@ -1,3 +1,4 @@
+// Downloading the speech models: resuming, cancelling, checksums.
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";

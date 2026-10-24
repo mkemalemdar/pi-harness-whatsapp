@@ -1,3 +1,4 @@
+// Voice: choosing the language, splitting text for speech, file names, the speech engine with real models.
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -5,7 +6,8 @@ import type { AnyMessageContent } from "baileys";
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { Media, safeFileName } from "../src/media.ts";
-import { addLanguage, SettingsStore } from "../src/settings.ts";
+import { addLanguage } from "../src/core/settings.ts";
+import { SettingsStore } from "../src/settings-store.ts";
 import { decodeToSamples, encodeVoiceNote } from "../src/voice/audio.ts";
 import { SpeechEngine } from "../src/voice/engine.ts";
 import { chooseSpeechLanguage, detectLanguage } from "../src/voice/language.ts";

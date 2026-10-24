@@ -73,7 +73,7 @@ describe("starting after an update", () => {
 		await controller.onSessionShutdown();
 		// Folders created later are private from the start.
 		const fresh = join(dir, "..", `${dir.split("/").pop()}-fresh`);
-		const { SettingsStore } = await import("../src/settings.ts");
+		const { SettingsStore } = await import("../src/settings-store.ts");
 		const store = new SettingsStore(join(fresh, "config.json"));
 		store.load();
 		store.update((draft) => {

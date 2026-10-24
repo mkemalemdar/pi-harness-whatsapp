@@ -2,7 +2,7 @@
 // and remembers which message ids were already handled.
 
 import { extractMessageContent, type proto, toNumber, type WAMessage } from "baileys";
-import type { Contact } from "../settings.ts";
+import type { Contact } from "../core/settings.ts";
 import { isGroupJid, isIgnoredJid, isLidJid, isPhoneJid, jidUser, normalizeJid } from "./jid.ts";
 
 export type InboundKind =

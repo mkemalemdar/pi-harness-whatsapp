@@ -1,3 +1,4 @@
+// Telling libsignal's console noise apart from everything else.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { calledFromLibsignal } from "../src/wa/console-guard.ts";

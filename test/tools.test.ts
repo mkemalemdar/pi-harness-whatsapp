@@ -1,3 +1,4 @@
+// The model's WhatsApp tools: who gets a message, when the tools are offered, file types.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { mimeFor, resolveRecipient, setToolsActive, TOOL_NAMES } from "../src/tools.ts";

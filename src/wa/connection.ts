@@ -1,6 +1,8 @@
 // The WhatsApp connection: one Baileys socket with saved login, QR pairing,
 // automatic reconnects and a single-instance lock. This is the only file that
-// talks to Baileys' socket directly, so a Baileys upgrade stays contained.
+// talks to Baileys' socket directly, so a Baileys upgrade stays contained. The
+// Baileys functions it uses come in as one object (the real ones by default), so
+// the integration tests can run everything else against a fake WhatsApp.
 
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -24,6 +26,28 @@ import { isIgnoredJid, jidUser, normalizeJid } from "./jid.ts";
 import { installConsoleGuard } from "./console-guard.ts";
 import { ConnectionLock, type LockHolder } from "./lock.ts";
 import { decideOnClose } from "./reconnect.ts";
+
+/** The parts of Baileys this connection uses. */
+export interface BaileysParts {
+	makeWASocket: typeof makeWASocket;
+	useMultiFileAuthState: typeof useMultiFileAuthState;
+	fetchLatestWaWebVersion: typeof fetchLatestWaWebVersion;
+	makeCacheableSignalKeyStore: typeof makeCacheableSignalKeyStore;
+	browser: (name: string) => [string, string, string];
+	downloadMediaMessage: typeof downloadMediaMessage;
+	generateMessageIDV2: typeof generateMessageIDV2;
+}
+
+/** The real WhatsApp, through Baileys. */
+export const BAILEYS: BaileysParts = {
+	makeWASocket,
+	useMultiFileAuthState,
+	fetchLatestWaWebVersion,
+	makeCacheableSignalKeyStore,
+	browser: (name) => Browsers.ubuntu(name),
+	downloadMediaMessage,
+	generateMessageIDV2,
+};
 
 const log = createLogger("connection");
 const LOCK_RETRY_MS = 30_000;
@@ -99,14 +123,17 @@ export class WhatsAppConnection {
 
 	private readonly authDir: string;
 	private readonly events: ConnectionEvents;
+	private readonly baileys: BaileysParts;
 
 	constructor(
 		authDir: string,
 		lockFile: string,
 		events: ConnectionEvents,
+		baileys: BaileysParts = BAILEYS,
 	) {
 		this.authDir = authDir;
 		this.events = events;
+		this.baileys = baileys;
 		this.lock = new ConnectionLock(lockFile);
 	}
 
@@ -234,7 +261,7 @@ export class WhatsAppConnection {
 	async send(jid: string, content: AnyMessageContent): Promise<SendResult> {
 		const socket = this.socket;
 		if (!socket || this.state.kind !== "open") throw new Error("WhatsApp is not connected");
-		const messageId = generateMessageIDV2(socket.user?.id);
+		const messageId = this.baileys.generateMessageIDV2(socket.user?.id);
 		this.rememberOwn(messageId);
 		const message = await socket.sendMessage(jid, content, { messageId });
 		const id = message?.key.id ?? messageId;
@@ -264,7 +291,7 @@ export class WhatsAppConnection {
 	async download(message: WAMessage): Promise<Buffer> {
 		const socket = this.socket;
 		if (!socket) throw new Error("WhatsApp is not connected");
-		return (await downloadMediaMessage(
+		return (await this.baileys.downloadMediaMessage(
 			message,
 			"buffer",
 			{},
@@ -306,14 +333,14 @@ export class WhatsAppConnection {
 			mkdirSync(this.authDir, { recursive: true, mode: 0o700 });
 			makePrivate(dirname(this.authDir));
 			makePrivate(this.authDir, true);
-			const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
+			const { state, saveCreds } = await this.baileys.useMultiFileAuthState(this.authDir);
 			if (generation !== this.generation || !this.wantRunning) return;
 			this.version ??= await this.fetchVersion();
 			const logger = createBaileysLogger();
-			const socket = makeWASocket({
-				auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
+			const socket = this.baileys.makeWASocket({
+				auth: { creds: state.creds, keys: this.baileys.makeCacheableSignalKeyStore(state.keys, logger) },
 				logger,
-				browser: Browsers.ubuntu("Pi"),
+				browser: this.baileys.browser("Pi"),
 				...(this.version ? { version: this.version } : {}),
 				// Keep notifications on the phone; this client never shows "online".
 				markOnlineOnConnect: false,
@@ -410,7 +437,7 @@ export class WhatsAppConnection {
 		// An outdated client version gets refused; fall back to Baileys' built-in one on any problem.
 		try {
 			const result = await Promise.race([
-				fetchLatestWaWebVersion(),
+				this.baileys.fetchLatestWaWebVersion(),
 				new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 4000).unref?.()),
 			]);
 			if (result && !result.error) return result.version;

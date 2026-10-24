@@ -2,7 +2,8 @@
 // rename, remove, and mark the owner.
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { type Contact, normalizeContactId, type SettingsStore } from "./settings.ts";
+import { type Contact, normalizeContactId } from "../core/settings.ts";
+import { type SettingsStore } from "../settings-store.ts";
 
 export interface RecentChat {
 	id: string;

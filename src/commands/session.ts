@@ -1,9 +1,9 @@
 // /help, /status, /stop, /compact, /autocompact
 
-import { languageLabel } from "../languages.ts";
-import { formatSpeed, REPLY_TOGGLES, replyLanguageLabel, VOICE_MODE_LABELS } from "../panel-model.ts";
-import { formatDuration } from "../run-report.ts";
-import { replyMode } from "../settings.ts";
+import { languageLabel } from "../core/languages.ts";
+import { formatSpeed, REPLY_TOGGLES, replyLanguageLabel, VOICE_MODE_LABELS } from "../core/panel-model.ts";
+import { formatDuration } from "../core/run-report.ts";
+import { replyMode } from "../core/settings.ts";
 import { notifyTerminal, type Command, type CommandEnv } from "./types.ts";
 
 export function formatTokens(tokens: number): string {

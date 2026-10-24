@@ -1,10 +1,11 @@
+// The /whatsapp panel as drawn on screen.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { type PanelHost, showPanel } from "../src/panel.ts";
-import { SettingsStore } from "../src/settings.ts";
+import { type PanelHost, showPanel } from "../src/ui/panel.ts";
+import { SettingsStore } from "../src/settings-store.ts";
 
 // A plain-text theme: colours and bold are dropped, greyed text is wrapped in ░ so tests can see it.
 const theme = { fg: (color: string, text: string) => (color === "dim" ? `░${text}░` : text), bold: (text: string) => text };
@@ -52,7 +53,7 @@ describe("the /whatsapp panel", () => {
 	it("shows VOICE greyed out while voice is off, and DANGER with the log file at the bottom", () => {
 		const text = screen(open());
 		assert.match(text, /\[VOICE\][\s\S]*Voice notes\s+░off░[\s\S]*░\s*Reply type░\s+░text░[\s\S]*░\s*Voice per language░[\s\S]*░\s*Voice reply speed░/);
-		assert.match(text, /\[DANGER\][\s\S]*Remove everything \(before uninstalling\)…[\s\S]*Log file: \/home\/alex/);
+		assert.match(text, /\[DANGER\][\s\S]*Remove everything…[\s\S]*Log file: \/home\/alex/);
 		assert.ok(!text.includes("TECHNICAL"));
 		assert.ok(!text.includes("Speech files"));
 	});

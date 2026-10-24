@@ -1,21 +1,11 @@
+// Settings: defaults, repairing bad values, contacts, voice switches, the per-session state.
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import {
-	addLanguage,
-	clampSpeed,
-	defaultSettings,
-	MIRROR,
-	normalizeContactId,
-	normalizeSettings,
-	removeLanguage,
-	restoreSessionState,
-	SESSION_ENTRY_TYPE,
-	replyMode,
-	SettingsStore,
-} from "../src/settings.ts";
+import { addLanguage, clampSpeed, defaultSettings, MIRROR, normalizeContactId, normalizeSettings, removeLanguage, restoreSessionState, SESSION_ENTRY_TYPE, replyMode } from "../src/core/settings.ts";
+import { SettingsStore } from "../src/settings-store.ts";
 
 describe("normalizeSettings", () => {
 	it("returns defaults for garbage", () => {

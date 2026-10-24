@@ -2,7 +2,7 @@
 // waits a little for a dropped connection to come back instead of failing.
 
 import type { AnyMessageContent, WAMessageKey } from "baileys";
-import { markdownToWhatsApp, splitMessage } from "../format.ts";
+import { markdownToWhatsApp, splitMessage } from "../core/format.ts";
 import { createLogger } from "../log.ts";
 import type { SendResult } from "./connection.ts";
 import { isGroupJid } from "./jid.ts";

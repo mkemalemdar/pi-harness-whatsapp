@@ -12,23 +12,18 @@ import { describeItem, readSetupRecord, removeItem, type SetupItem } from "./cle
 import { Bridge } from "./bridge.ts";
 import { CommandRouter } from "./commands/router.ts";
 import type { CommandEnv } from "./commands/types.ts";
-import { contactsFlow, type RecentChat } from "./contacts-flow.ts";
+import { contactsFlow, type RecentChat } from "./ui/contacts-flow.ts";
 import { createLogger, logFilePath } from "./log.ts";
 import { cleanInbox, Media } from "./media.ts";
-import type { SpeechInfo } from "./panel-model.ts";
-import { getLanguage } from "./languages.ts";
-import { type ConnectionCommand, type PanelHost, showPanel } from "./panel.ts";
+import type { SpeechInfo } from "./core/panel-model.ts";
+import { getLanguage } from "./core/languages.ts";
+import { type ConnectionCommand, type PanelHost, showPanel } from "./ui/panel.ts";
 import { dataDir, makePrivate, paths, removeDataDir } from "./paths.ts";
 import { isRemoved, markRemoved } from "./removed.ts";
 import { detectService } from "./commands/power.ts";
-import {
-	type GlobalSettings,
-	restoreSessionState,
-	SESSION_ENTRY_TYPE,
-	type SessionState,
-	SettingsStore,
-} from "./settings.ts";
-import { type ConnectionState, WhatsAppConnection } from "./wa/connection.ts";
+import { type GlobalSettings, restoreSessionState, SESSION_ENTRY_TYPE, type SessionState } from "./core/settings.ts";
+import { SettingsStore } from "./settings-store.ts";
+import { type BaileysParts, type ConnectionState, WhatsAppConnection } from "./wa/connection.ts";
 import { contactJid, phoneJid } from "./wa/jid.ts";
 import { SendQueue } from "./wa/outbound.ts";
 import { PollMenus } from "./wa/polls.ts";
@@ -76,14 +71,20 @@ export class Controller implements PanelHost, CommandEnv {
 
 	readonly pi: ExtensionAPI;
 
-	constructor(pi: ExtensionAPI) {
+	/** `baileys`: the WhatsApp it talks to (the real one by default; a fake in the integration tests). */
+	constructor(pi: ExtensionAPI, baileys?: BaileysParts) {
 		this.pi = pi;
-		this.connection = new WhatsAppConnection(paths.auth(), paths.lock(), {
-			onState: (state) => this.onConnectionState(state),
-			onMessages: (messages, type) => void this.bridge.handleUpsert(messages, type),
-			onHistory: (batch) => this.onHistory(batch),
-			onLidMapping: (lid, pn) => this.recents.rememberLid(lid, pn),
-		});
+		this.connection = new WhatsAppConnection(
+			paths.auth(),
+			paths.lock(),
+			{
+				onState: (state) => this.onConnectionState(state),
+				onMessages: (messages, type) => void this.bridge.handleUpsert(messages, type),
+				onHistory: (batch) => this.onHistory(batch),
+				onLidMapping: (lid, pn) => this.recents.rememberLid(lid, pn),
+			},
+			baileys,
+		);
 		this.queue = new SendQueue(this.connection);
 		this.menus = new PollMenus(
 			{

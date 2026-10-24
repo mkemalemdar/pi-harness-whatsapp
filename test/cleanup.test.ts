@@ -1,3 +1,4 @@
+// Remove everything's helpers: npm's cache, and the programs recorded in setup.json.
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

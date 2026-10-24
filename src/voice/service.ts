@@ -2,9 +2,10 @@
 // (Supertonic 3), both on OpenVINO. Files download on first use, or when the
 // user says "Now" after changing settings.
 
-import { getLanguage, LANGUAGES, languageLabel, VOICES } from "../languages.ts";
+import { getLanguage, LANGUAGES, languageLabel, VOICES } from "../core/languages.ts";
 import { createLogger } from "../log.ts";
-import type { GlobalSettings, SettingsStore } from "../settings.ts";
+import type { GlobalSettings } from "../core/settings.ts";
+import type { SettingsStore } from "../settings-store.ts";
 import { decodeToSamples, encodeVoiceNote, ffmpegAvailable } from "./audio.ts";
 import { SpeechEngine } from "./engine.ts";
 import { detectLanguage } from "./language.ts";

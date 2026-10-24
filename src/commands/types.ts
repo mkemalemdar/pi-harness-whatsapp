@@ -1,5 +1,7 @@
+// What the WhatsApp commands (/help, /model, /status …) may use from the controller, and their shared types.
+
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { SettingsStore } from "../settings.ts";
+import type { SettingsStore } from "../settings-store.ts";
 import type { InboundMessage } from "../wa/inbound.ts";
 import type { SendQueue } from "../wa/outbound.ts";
 import type { PollMenus } from "../wa/polls.ts";

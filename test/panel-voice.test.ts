@@ -1,12 +1,13 @@
+// The Voice notes menu: ticking parts on and off, downloading and deleting speech files.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { MenuStack } from "../src/panel-components.ts";
-import type { SpeechInfo } from "../src/panel-model.ts";
-import { type PanelHost, type SubmenuContext, voiceNotesMenu } from "../src/panel.ts";
-import { SettingsStore } from "../src/settings.ts";
+import { MenuStack } from "../src/ui/panel-components.ts";
+import type { SpeechInfo } from "../src/core/panel-model.ts";
+import { type PanelHost, type SubmenuContext, voiceNotesMenu } from "../src/ui/panel.ts";
+import { SettingsStore } from "../src/settings-store.ts";
 
 const ALL = ["openvino-runtime", "whisper-large-v3-turbo-int8-ov", "supertonic-3"];
 const KEY = { space: " ", enter: "\r", escape: "\x1b", down: "\x1b[B" };

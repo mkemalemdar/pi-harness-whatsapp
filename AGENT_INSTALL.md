@@ -37,8 +37,12 @@ Do these yourself before asking anything, so your questions can include the resu
 
 Ask these together, in one message, and wait for the answers:
 
-1. **Which WhatsApp number will Pi use?** Recommend a **second number**. The extension uses an unofficial WhatsApp Web client (Baileys), and WhatsApp may restrict numbers that use one. Using their own number also works: they then talk to Pi in the "Message yourself" chat.
-2. **Owner:** their own phone number, with country code. The owner is the only one who can change Pi from WhatsApp (`/model`, `/compact`, `/quit`, …). If they don't know it yet, skip it: the first person who messages the bot is offered as owner in the terminal.
+1. **Which WhatsApp number will Pi use?** Recommend a **second number**. The extension uses an unofficial WhatsApp Web client (Baileys), and WhatsApp may restrict numbers that use one. Using their own number also works, with no second phone or SIM. If they pick their own number, tell them what that means (the README's "One number or two" has the details):
+   - They talk to Pi in their **"Message yourself"** chat. It always counts as the owner, so you don't need their number for question 2.
+   - Pi's answers are messages from their own account, so WhatsApp may not notify them.
+   - **Pi answers allowed chats as them:** an allowed contact who writes to them gets Pi's answer from their account, and in an allowed group, people who @mention or reply to them get Pi's answer under their name.
+   - They can't talk to Pi in a group, not even one with only themselves in it: their own messages in groups are ignored.
+2. **Owner** (only with a second number): their own phone number, with country code. The owner is the only one who can change Pi from WhatsApp (`/model`, `/compact`, `/quit`, …). If they don't know it yet, skip it: the first person who messages the bot is offered as owner in the terminal. With their own number, skip this question: the "Message yourself" chat is the owner.
 3. **Languages:** which languages they'll write and speak in. The default is English only. Supported: English, Turkish, German, French, Spanish, Italian, Portuguese, Dutch, Polish, Russian, Ukrainian, Arabic, Hindi, Swedish and Finnish. Hindi voice notes are less accurate than the others (see the README's table). Adding languages downloads nothing extra.
 4. **Voice notes:** off (the default), understand voice notes, reply with voice notes, or both? Give them the disk and RAM from the table in step 1, and the result of your check. Off means a voice note gets "🎤 Voice notes are off. Please type your message."; they can switch voice on later in `/whatsapp` → Voice notes.
 5. **Background service:** should Pi keep running without a terminal (see "Run in the background" in the README)? Don't set it up unless they say yes. If they do, ask which project folder Pi should work in.
@@ -165,7 +169,9 @@ Tell the user:
 1. Start Pi: `pi`
 2. Run `/whatsapp`, then set **WhatsApp** to **on** (Enter).
 3. A QR code appears above the editor. On the phone that has the chosen number: **WhatsApp → Settings → Linked devices → Link a device**, then scan it.
-4. From your own phone, send the bot number a message. If nobody is allowed yet, Pi asks in the terminal whether to allow you as owner.
+4. Write to Pi:
+   - **On your own number:** open the **"Message yourself"** chat (your own name, marked "You") and write there. It's already the owner; nothing to allow.
+   - **On a second number:** from your own phone, send the bot number a message. If nobody is allowed yet, Pi asks in the terminal whether to allow you as owner.
 5. **Send `/help` on WhatsApp.** It lists every command and shows the current settings (model, reply type, languages, which extras are on). Be sure to tell them this step: it's how they learn what they can do from the phone.
 
 Then tell them, briefly:
@@ -173,7 +179,7 @@ Then tell them, briefly:
 - Anything that isn't a command goes to Pi as a prompt. Images and files work too: Pi sees images, gets files saved for it to open, and can send images and files back when asked ("send me the screenshot").
 - Voice notes, if they turned them on: understanding and replying can each be switched on or off in `/whatsapp` → Voice notes; switching a part off deletes its files after asking. To stop voice replies without deleting anything, set Reply type to text.
 - To remove it later, the README's **Uninstall** section has the steps (in Pi: `/whatsapp` → Danger → Remove everything, or `/whatsapp remove`, then `pi uninstall`).
-- If they want Pi in a group: add the bot's number to the group, have someone write there, then allow it in `/whatsapp` → Allowed chats → Pick from recent chats. In the group, people @mention Pi or reply to its messages; Pi also sees the last 20 text messages before that for context. You can't allow a group for them in advance, because the group's id is only known once it appears in recent chats. Remind them that every member of an allowed group can prompt Pi.
+- If they want Pi in a group (**second number only**; on their own number their messages in groups are ignored): add the bot's number to the group, have someone write there, then allow it in `/whatsapp` → Allowed chats → Pick from recent chats. In the group, people @mention Pi or reply to its messages; Pi also sees the last 20 text messages before that for context. You can't allow a group for them in advance, because the group's id is only known once it appears in recent chats. Remind them that every member of an allowed group can prompt Pi.
 - From WhatsApp they can switch the model (`/model`), the reasoning level (`/think`), compact (`/compact`), stop a run (`/stop`), start a new session (`/new`) and change the reply type, language, speed and extras (`/voice`, `/lang`, `/speed`, `/replies`). Menus come as polls: tap an option.
 - Everything else, including on/off, allowed chats and voices, is in `/whatsapp` in the terminal.
 
@@ -183,12 +189,12 @@ Finally, tell the user **everything you set up outside Pi**: for example "instal
 
 - The footer of Pi shows `WA: connected as +<number> · <n> chats`.
 - `~/.pi/agent/pi-harness-whatsapp/log/pi-harness-whatsapp.log` shows `state: open`.
-- A WhatsApp message to the bot gets an answer, and `/help` gets the command list.
+- A WhatsApp message to the bot (on their own number: in "Message yourself") gets an answer, and `/help` gets the command list.
 
 ## Never do this
 
 - Don't read, copy, print, upload or commit `~/.pi/agent/pi-harness-whatsapp/auth/`. It is the WhatsApp login; anyone with it can use the account.
-- Don't add contacts the user didn't name. Allowed chats can send prompts to Pi, which can run commands on this machine.
+- Don't add contacts the user didn't name. Allowed chats can send prompts to Pi, which can run commands on this machine. On the user's own number, an allowed chat also gets Pi's answers from the user's account.
 - Don't set `commandAccess` to `allowed` unless the user asks.
 - Don't install the systemd service, or enable it at boot, without the user's yes.
 - Don't publish, fork or re-upload this package on the user's behalf.
@@ -234,7 +240,7 @@ The extension writes nowhere else. It never edits shell profiles or creates file
    The first question is "Remove everything?"; then one "Also remove …?" per program in `setup.json`. Records with `"method": "notify"` are progress and the result; the last one starts with `WhatsApp removed.` and lists what was done and any command left for you to run. Show it to the user, then close stdin so Pi quits. Read stdout as a stream and split records on `\n` only (see Pi's `docs/rpc.md`).
 
    **Or the user**, in Pi:
-   1. run `/whatsapp` → **Danger** → **Remove everything (before uninstalling)…** (or type `/whatsapp remove`) and confirm. It unlinks the phone, deletes the data folder, removes this extension's entries from npm's cache, and asks about each program in `setup.json` (removing exactly the recorded packages, after an apt dry run that keeps everything if anything else would go too),
+   1. run `/whatsapp` → **Danger** → **Remove everything…** (or type `/whatsapp remove`) and confirm. It unlinks the phone, deletes the data folder, removes this extension's entries from npm's cache, and asks about each program in `setup.json` (removing exactly the recorded packages, after an apt dry run that keeps everything if anything else would go too),
    2. read you its summary (the last notice), then quit Pi.
 
    **Already uninstalled?** The cleanest way is to install it again (`pi install npm:pi-harness-whatsapp`) and do the step above (over RPC, or the user); it then also cleans what the first uninstall left behind.

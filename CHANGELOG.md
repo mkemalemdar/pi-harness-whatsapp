@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.5 — 2026-10-24
+
+- **One number or two:** the README and AGENT_INSTALL.md explain using your own number (you talk to Pi in "Message
+  yourself"; Pi answers allowed chats as you; no talking to Pi in groups) and a second number.
+- A Limits section in the README; the Danger row is "Remove everything…".
+- Development: pure logic in `src/core/`, the panel in `src/ui/`; settings split into the pure part and the file
+  store; an integration test that runs a real pi against a fake WhatsApp and a fake model; docs/HOW-IT-WORKS.md and
+  docs/TESTING.md.
+
 ## 0.1.4 — 2026-10-24
 
 - The data folder follows pi's own agent folder setting exactly (`PI_CODING_AGENT_DIR`, also with `~`).

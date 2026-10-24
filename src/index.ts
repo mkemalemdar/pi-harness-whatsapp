@@ -2,19 +2,28 @@
 //
 // This file only wires Pi's extension API to the Controller. Nothing is
 // started here: connections begin in session_start, as Pi requires.
+// createExtension() is the same extension talking to another WhatsApp (the
+// integration tests' fake one); the default export talks to the real one.
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Controller, NEW_SESSION_ARG } from "./controller.ts";
 import { registerTools, setToolsActive, TOOL_NAMES } from "./tools.ts";
+import type { BaileysParts } from "./wa/connection.ts";
 
-export default function piHarnessWhatsApp(pi: ExtensionAPI) {
+export default createExtension();
+
+export function createExtension(baileys?: BaileysParts): (pi: ExtensionAPI) => void {
+	return (pi) => piHarnessWhatsApp(pi, baileys);
+}
+
+function piHarnessWhatsApp(pi: ExtensionAPI, baileys: BaileysParts | undefined) {
 	pi.registerFlag("whatsapp", {
 		description: "Turn WhatsApp on for this session (also in print/JSON mode)",
 		type: "boolean",
 		default: false,
 	});
 
-	const controller = new Controller(pi);
+	const controller = new Controller(pi, baileys);
 	const bridge = controller.bridge;
 	registerTools(pi, controller);
 	controller.onToolsChanged = (on) => setToolsActive(pi, on);

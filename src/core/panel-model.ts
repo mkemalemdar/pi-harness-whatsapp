@@ -2,20 +2,8 @@
 // row, and every description. Free of TUI code so it can be unit-tested.
 
 import { getLanguage, LANGUAGES, languageLabel } from "./languages.ts";
-import { KNOWN_SPECS, type ModelSpec, PART_SPECS } from "./voice/models.ts";
-import {
-	clampSpeed,
-	type GlobalSettings,
-	MIRROR,
-	replyMode,
-	type VoiceParts,
-	GROUP_REPLY_MODES,
-	type GroupReplies,
-	type ReplyToggles,
-	SPEED_PRESETS,
-	VOICE_MODES,
-	type VoiceMode,
-} from "./settings.ts";
+import { KNOWN_SPECS, type ModelSpec, PART_SPECS } from "../voice/models.ts";
+import { clampSpeed, type GlobalSettings, MIRROR, replyMode, type VoiceParts, GROUP_REPLY_MODES, type GroupReplies, type ReplyToggles, SPEED_PRESETS, VOICE_MODES, type VoiceMode } from "./settings.ts";
 
 export const ON = "on";
 export const OFF = "off";
@@ -396,9 +384,9 @@ export function buildRows(state: PanelState): PanelRow[] {
 		header("danger", "DANGER", "Can't be undone."),
 		{
 			id: "remove",
-			label: "Remove everything (before uninstalling)…",
+			label: "Remove everything…",
 			description:
-				"Unlinks Pi from your phone; deletes the login, speech files, settings, log, received files and npm's cached copies; asks about programs installed for it. Asks first. Same as /whatsapp remove.",
+				"Before uninstalling: unlinks Pi from your phone; deletes the login, speech files, settings, log, received files and npm's cached copies; asks about programs installed for it. Asks first. Same as /whatsapp remove.",
 			currentValue: "",
 			kind: "remove",
 		},

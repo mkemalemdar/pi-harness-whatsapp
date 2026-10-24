@@ -1,7 +1,8 @@
+// The run summary (tool calls, touched files, time) and the queue that sends messages in order.
 import type { AnyMessageContent } from "baileys";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { formatActivity, formatDuration, formatTouchedFiles, RunReport } from "../src/run-report.ts";
+import { formatActivity, formatDuration, formatTouchedFiles, RunReport } from "../src/core/run-report.ts";
 import { SendQueue, type Sender } from "../src/wa/outbound.ts";
 
 describe("RunReport", () => {

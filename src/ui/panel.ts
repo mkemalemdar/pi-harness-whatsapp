@@ -4,7 +4,7 @@
 
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
-import { getLanguage, languageLabel } from "./languages.ts";
+import { getLanguage, languageLabel } from "../core/languages.ts";
 import {
 	applyChoice,
 	applyLanguageSelection,
@@ -27,10 +27,11 @@ import {
 	voiceLabel,
 	type VoicePart,
 	voicePlan,
-} from "./panel-model.ts";
+} from "../core/panel-model.ts";
 import { InputStep, ListMenu, type MenuItem, MenuStack } from "./panel-components.ts";
-import { clampSpeed, MAX_SPEED, MIN_SPEED, type SettingsStore, type VoiceParts } from "./settings.ts";
-import { PART_SPECS, RUNTIME_SPEC } from "./voice/models.ts";
+import { clampSpeed, MAX_SPEED, MIN_SPEED, type VoiceParts } from "../core/settings.ts";
+import { type SettingsStore } from "../settings-store.ts";
+import { PART_SPECS, RUNTIME_SPEC } from "../voice/models.ts";
 
 export type PanelAction = "contacts" | "qr" | "remove";
 
